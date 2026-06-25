@@ -16,7 +16,7 @@ Every cloud dictation service sends your audio to someone else's server. That's 
 ### Linux
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/Scribe.git
+git clone https://github.com/steevymathew/scribe.git
 cd Scribe
 ./setup.sh
 ./scribe          # CPU mode
@@ -39,7 +39,7 @@ sudo pacman -S xdotool portaudio
 ### Windows
 
 ```
-git clone https://github.com/YOUR_USERNAME/Scribe.git
+git clone https://github.com/steevymathew/Scribe.git
 cd Scribe
 setup.bat
 scribe.bat          # CPU mode
