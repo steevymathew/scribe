@@ -1,0 +1,14 @@
+[Unit]
+Description=Scribe — offline dictation daemon
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/Scribe/scribe
+Restart=on-failure
+RestartSec=5
+Environment=DISPLAY=:0
+Environment=XDG_SESSION_TYPE=x11
+
+[Install]
+WantedBy=default.target
