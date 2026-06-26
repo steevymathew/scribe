@@ -149,6 +149,67 @@ def _get_typer():
 
 
 # ---------------------------------------------------------------------------
+# Key matching — cross-platform variance handling
+# ---------------------------------------------------------------------------
+
+# Windows virtual key codes for right-side modifiers.
+# pynput on Windows sometimes delivers a bare KeyCode(vk=N) instead of the
+# named Key enum, so equality checks fail even though it's the right key.
+_WIN_VK: dict[keyboard.Key, int] = {
+    keyboard.Key.ctrl_r:  163,  # VK_RCONTROL
+    keyboard.Key.ctrl_l:  162,  # VK_LCONTROL
+    keyboard.Key.alt_r:   165,  # VK_RMENU
+    keyboard.Key.alt_l:   164,  # VK_LMENU
+    keyboard.Key.shift_r: 161,  # VK_RSHIFT
+    keyboard.Key.shift_l: 160,  # VK_LSHIFT
+}
+
+# Functional aliases: keys that should be treated as equivalent.
+# AltGr (Right Alt on international keyboards) reports as Key.alt_gr on
+# Windows/Linux but is physically and functionally the same key as alt_r.
+_KEY_ALIASES: dict[keyboard.Key, set] = {
+    keyboard.Key.alt_r: {keyboard.Key.alt_gr},
+}
+
+
+def _vk_of(key) -> int | None:
+    """Return the virtual key code for a key object, or None if unavailable."""
+    if hasattr(key, 'vk'):                                      # bare KeyCode
+        return key.vk
+    if hasattr(key, 'value') and hasattr(key.value, 'vk'):     # Key enum
+        return key.value.vk
+    return None
+
+
+def match_key(key, target: keyboard.Key) -> bool:
+    """
+    Return True if `key` (from a pynput event) matches the `target` key,
+    accounting for:
+      - Direct equality (all platforms, normal case)
+      - Functional aliases (e.g. alt_gr == alt_r on international keyboards)
+      - VK-code matching (Windows drivers that return KeyCode instead of Key enum)
+    """
+    if key == target:
+        return True
+
+    aliases = _KEY_ALIASES.get(target, set())
+    if key in aliases:
+        return True
+
+    key_vk = _vk_of(key)
+    if key_vk is not None:
+        target_vk = _vk_of(target) or _WIN_VK.get(target)
+        if target_vk is not None and key_vk == target_vk:
+            return True
+        for alias in aliases:
+            alias_vk = _vk_of(alias) or _WIN_VK.get(alias)
+            if alias_vk is not None and key_vk == alias_vk:
+                return True
+
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Daemon
 # ---------------------------------------------------------------------------
 
@@ -278,30 +339,23 @@ class Scribe:
         if text:
             self._type_text(text)
 
-    def _match_key(self, key, target):
-        if key == target:
-            return True
-        if hasattr(key, 'vk') and hasattr(target, 'value') and hasattr(target.value, 'vk'):
-            return key.vk == target.value.vk
-        return False
-
     def on_press(self, key):
         if self.debug:
-            print(f"  [DBG] press: {key!r} boost_held={self.boost_held}")
-        if self._match_key(key, self.boost_key):
+            print(f"  [DBG] press: {key!r}  vk={_vk_of(key)}  boost_held={self.boost_held}")
+        if match_key(key, self.boost_key):
             self.boost_held = True
             if self.recording:
                 self.use_heavy = True
                 print(" +BOOST", end="", flush=True)
-        if self._match_key(key, self.hotkey):
+        if match_key(key, self.hotkey):
             self.start_recording()
 
     def on_release(self, key):
         if self.debug:
-            print(f"  [DBG] release: {key!r} boost_held={self.boost_held}")
-        if self._match_key(key, self.boost_key):
+            print(f"  [DBG] release: {key!r}  vk={_vk_of(key)}  boost_held={self.boost_held}")
+        if match_key(key, self.boost_key):
             self.boost_held = False
-        if self._match_key(key, self.hotkey):
+        if match_key(key, self.hotkey):
             self.stop_recording()
 
     def run(self):
@@ -344,6 +398,7 @@ HOTKEY_MAP = {
     "rctrl": keyboard.Key.ctrl_r,
     "lctrl": keyboard.Key.ctrl_l,
     "ralt": keyboard.Key.alt_r,
+    "alt_gr": keyboard.Key.alt_gr,   # explicit AltGr for international keyboards
     "lalt": keyboard.Key.alt_l,
     "rshift": keyboard.Key.shift_r,
     "scroll_lock": keyboard.Key.scroll_lock,
