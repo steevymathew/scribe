@@ -30,6 +30,10 @@ MAX_AUDIO_SEC = 120
 HEAVY_MODEL = "large-v3-turbo"
 PLATFORM = platform.system()
 
+# Right Alt is reported as alt_r on most layouts but as alt_gr on some
+# (notably several Windows keyboard layouts). Treat both as "Right Alt".
+RIGHT_ALT_KEYS = frozenset({keyboard.Key.alt_r, keyboard.Key.alt_gr})
+
 
 # ---------------------------------------------------------------------------
 # Transcription backends
@@ -50,9 +54,10 @@ class Transcriber(ABC):
 class CPUTranscriber(Transcriber):
     """CTranslate2 int8 — runs anywhere, no GPU required."""
 
-    def __init__(self):
+    def __init__(self, beam_size=1):
         self._model = None
         self._name = ""
+        self._beam_size = beam_size
 
     def load(self, model_name):
         from faster_whisper import WhisperModel
@@ -66,7 +71,7 @@ class CPUTranscriber(Transcriber):
         segments, _ = self._model.transcribe(
             audio,
             language="en",
-            beam_size=5,
+            beam_size=self._beam_size,
             vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=500, speech_pad_ms=200),
         )
@@ -80,9 +85,10 @@ class CPUTranscriber(Transcriber):
 class GPUTranscriber(Transcriber):
     """PyTorch CUDA fp16 — fast inference on NVIDIA GPUs."""
 
-    def __init__(self):
+    def __init__(self, beam_size=1):
         self._model = None
         self._name = ""
+        self._beam_size = beam_size
 
     def load(self, model_name):
         import whisper
@@ -96,7 +102,7 @@ class GPUTranscriber(Transcriber):
         result = self._model.transcribe(
             audio,
             language="en",
-            beam_size=5,
+            beam_size=self._beam_size,
             fp16=True,
             no_speech_threshold=0.6,
             condition_on_previous_text=False,
@@ -108,10 +114,227 @@ class GPUTranscriber(Transcriber):
         return f"{self._name}/cuda"
 
 
-def make_transcriber(device: str) -> Transcriber:
+_qnn_htp_path = None
+_qnn_checked = False
+
+
+def _ensure_qnn_registered():
+    """Register the QNN execution-provider plugin once.
+
+    Recent ONNX Runtime ships QNN as a separate plugin (`onnxruntime_qnn`) that
+    must be registered before the provider becomes available. Returns the path
+    to QnnHtp.dll when the Qualcomm NPU stack is present, otherwise None.
+    """
+    global _qnn_htp_path, _qnn_checked
+    if _qnn_checked:
+        return _qnn_htp_path
+    _qnn_checked = True
+    try:
+        import onnxruntime as ort
+        import onnxruntime_qnn as oq
+    except ImportError:
+        return None
+    try:
+        os.add_dll_directory(oq.LIB_DIR_FULL_PATH)
+    except (OSError, AttributeError):
+        pass
+    try:
+        if "QNNExecutionProvider" not in ort.get_available_providers():
+            ort.register_execution_provider_library(oq.get_ep_name(), oq.get_library_path())
+    except Exception:
+        pass
+    if "QNNExecutionProvider" in ort.get_available_providers():
+        _qnn_htp_path = oq.get_qnn_htp_path()
+    return _qnn_htp_path
+
+
+def _download_onnx(repo, fname):
+    """Download an ONNX file plus its external-data sidecar, if it has one.
+
+    Big models (e.g. large-v3-turbo) keep weights in a separate
+    ``<name>.onnx_data`` file because they exceed ONNX's 2 GB single-file limit;
+    the .onnx alone is just the graph and won't load without it.
+    """
+    from huggingface_hub import hf_hub_download
+    path = hf_hub_download(repo, fname)
+    try:
+        hf_hub_download(repo, fname + "_data")  # weights sidecar, if present
+    except Exception:
+        pass
+    return path
+
+
+class ONNXTranscriber(Transcriber):
+    """ONNX Runtime backend — native ARM64, NPU-ready (Qualcomm Snapdragon).
+
+    Runs Whisper as ONNX models with no PyTorch and no CTranslate2, so it
+    executes *natively* on ARM64 (Snapdragon X) instead of the emulated x64 that
+    faster-whisper requires there. Models are standard ONNX Whisper weights from
+    the onnx-community repos, downloaded once and then used entirely offline.
+
+    The encoder (the heavy part) is offered to the Hexagon NPU via the QNN
+    execution provider; the small autoregressive decoder runs on the CPU with a
+    key/value cache — ``decoder_model`` produces the initial cache, then
+    ``decoder_with_past_model`` advances one token per step, so each step is a
+    single-token forward pass instead of re-reading the whole sequence.
+
+    NPU offload is opportunistic: the stock onnx-community encoder graphs are
+    plain float ONNX, which this QNN/HTP runtime declines to place on the NPU
+    (it wants a QNN-prepared, statically quantized graph). So by default the
+    encoder runs on the native-ARM64 CPU. Point ``--npu-encoder`` at a
+    QNN-ready encoder .onnx and, when QNN binds it, the encoder runs on the
+    Hexagon NPU automatically.
+    """
+
+    ONNX_REPO_PREFIX = "onnx-community/whisper-"
+    SILENCE_RMS = 0.005   # clips quieter than this are treated as silence
+
+    def __init__(self, beam_size=1, npu_encoder=None, precision=""):
+        self._name = ""
+        self._beam_size = beam_size  # decoder is greedy; kept for interface parity
+        self._npu_encoder = npu_encoder
+        # "" = fp32 (most accurate), "_int8" = quantized (much smaller/faster to
+        # load and run, used for the heavy boost model where it's still accurate).
+        self._precision = precision
+        self._encoder = None
+        self._decoder = None        # first step (no past)
+        self._decoder_past = None   # subsequent steps (with KV cache)
+        self._processor = None
+        self._encoder_ep = "cpu"
+        self._enc_in = None
+        self._enc_out = None
+        self._enc_dtype = np.float32
+        self._n_layers = 0
+        self._start_ids = []
+        self._eot_id = None
+
+    def load(self, model_name):
+        import onnxruntime as ort
+        from transformers import AutoProcessor
+
+        self._name = model_name
+        repo = self.ONNX_REPO_PREFIX + model_name
+        p = self._precision
+        t0 = time.monotonic()
+
+        enc_path = self._npu_encoder or _download_onnx(repo, f"onnx/encoder_model{p}.onnx")
+        dec_path = _download_onnx(repo, f"onnx/decoder_model{p}.onnx")
+        dec_past_path = _download_onnx(repo, f"onnx/decoder_with_past_model{p}.onnx")
+        self._processor = AutoProcessor.from_pretrained(repo)
+
+        so = ort.SessionOptions()
+        so.log_severity_level = 3  # quiet ORT's per-op chatter
+
+        # Offer the encoder to the NPU (QNN/HTP) when available; ORT silently
+        # keeps on CPU whatever QNN won't take, so this never fails — we just
+        # read back which provider actually claimed the graph.
+        providers = ["CPUExecutionProvider"]
+        htp_path = _ensure_qnn_registered()
+        if htp_path:
+            providers = [
+                ("QNNExecutionProvider",
+                 {"backend_path": htp_path, "htp_performance_mode": "burst"}),
+                "CPUExecutionProvider",
+            ]
+        self._encoder = ort.InferenceSession(enc_path, sess_options=so, providers=providers)
+        self._encoder_ep = (
+            "npu" if "QNNExecutionProvider" in self._encoder.get_providers() else "cpu"
+        )
+
+        self._decoder = ort.InferenceSession(
+            dec_path, sess_options=so, providers=["CPUExecutionProvider"]
+        )
+        self._decoder_past = ort.InferenceSession(
+            dec_past_path, sess_options=so, providers=["CPUExecutionProvider"]
+        )
+
+        enc_input = self._encoder.get_inputs()[0]
+        self._enc_in = enc_input.name
+        self._enc_out = self._encoder.get_outputs()[0].name
+        self._enc_dtype = np.float16 if "16" in enc_input.type else np.float32
+        self._n_layers = sum(
+            1 for o in self._decoder.get_outputs() if o.name.endswith(".decoder.key")
+        )
+
+        tok = self._processor.tokenizer
+        # English-only models (e.g. small.en) take just <sot><notimestamps>.
+        # Multilingual models (e.g. large-v3-turbo, used for boost mode) need
+        # the language + task tokens, or they misbehave — force English.
+        self._start_ids = [tok.convert_tokens_to_ids("<|startoftranscript|>")]
+        if not model_name.endswith(".en"):
+            self._start_ids += [
+                tok.convert_tokens_to_ids("<|en|>"),
+                tok.convert_tokens_to_ids("<|transcribe|>"),
+            ]
+        self._start_ids.append(tok.convert_tokens_to_ids("<|notimestamps|>"))
+        self._eot_id = tok.convert_tokens_to_ids("<|endoftext|>")
+
+        where = "Hexagon NPU (QNN)" if self._encoder_ep == "npu" else "CPU (native ARM64)"
+        print(f"  Loaded '{model_name}' ONNX — encoder on {where}, decoder on CPU "
+              f"(KV cache) in {time.monotonic() - t0:.1f}s")
+
+    def transcribe(self, audio):
+        # No VAD here, so gate near-silence to avoid the decoder hallucinating.
+        if float(np.sqrt(np.mean(np.square(audio)))) < self.SILENCE_RMS:
+            return ""
+
+        feats = self._processor.feature_extractor(
+            audio, sampling_rate=SAMPLE_RATE, return_tensors="np"
+        ).input_features.astype(self._enc_dtype)
+
+        enc = self._encoder.run([self._enc_out], {self._enc_in: feats})[0]
+        enc = enc.astype(np.float32)  # decoder runs fp32 on CPU
+
+        # First step: full prompt through the no-past decoder, which emits the
+        # initial cache — decoder self-attn KV and (constant) encoder cross-attn KV.
+        out = self._decoder.run(
+            None,
+            {"input_ids": np.array([self._start_ids], dtype=np.int64),
+             "encoder_hidden_states": enc},
+        )
+        named = {o.name: v for o, v in zip(self._decoder.get_outputs(), out)}
+        next_id = int(named["logits"][0, -1].argmax())
+
+        enc_past, dec_past = {}, {}
+        for i in range(self._n_layers):
+            enc_past[f"past_key_values.{i}.encoder.key"] = named[f"present.{i}.encoder.key"]
+            enc_past[f"past_key_values.{i}.encoder.value"] = named[f"present.{i}.encoder.value"]
+            dec_past[f"past_key_values.{i}.decoder.key"] = named[f"present.{i}.decoder.key"]
+            dec_past[f"past_key_values.{i}.decoder.value"] = named[f"present.{i}.decoder.value"]
+
+        generated = []
+        for _ in range(444):  # Whisper's max decode length
+            if next_id == self._eot_id:
+                break
+            generated.append(next_id)
+            feed = {"input_ids": np.array([[next_id]], dtype=np.int64)}
+            feed.update(dec_past)
+            feed.update(enc_past)  # cross-attn KV is constant, reused every step
+            out = self._decoder_past.run(None, feed)
+            named = {o.name: v for o, v in zip(self._decoder_past.get_outputs(), out)}
+            next_id = int(named["logits"][0, -1].argmax())
+            for i in range(self._n_layers):
+                dec_past[f"past_key_values.{i}.decoder.key"] = named[f"present.{i}.decoder.key"]
+                dec_past[f"past_key_values.{i}.decoder.value"] = named[f"present.{i}.decoder.value"]
+
+        text = self._processor.tokenizer.decode(generated, skip_special_tokens=True).strip()
+        # Drop Whisper's non-speech annotations like [BLANK_AUDIO] or (music).
+        if text.startswith(("[", "(", "♪")) and text.endswith(("]", ")", "♪")):
+            return ""
+        return text
+
+    @property
+    def backend_label(self):
+        return f"{self._name}/{'npu' if self._encoder_ep == 'npu' else 'onnx-cpu'}"
+
+
+def make_transcriber(device: str, beam_size: int = 1, npu_encoder=None,
+                     precision: str = "") -> Transcriber:
     if device == "cuda":
-        return GPUTranscriber()
-    return CPUTranscriber()
+        return GPUTranscriber(beam_size)
+    if device == "npu":
+        return ONNXTranscriber(beam_size, npu_encoder, precision)
+    return CPUTranscriber(beam_size)
 
 
 # ---------------------------------------------------------------------------
@@ -153,11 +376,14 @@ def _get_typer():
 # ---------------------------------------------------------------------------
 
 class Scribe:
-    def __init__(self, model_size, hotkey, boost_key, device, debug=False):
+    def __init__(self, model_size, hotkey, boost_key, device, beam_size=1,
+                 npu_encoder=None, debug=False):
         self.model_size = model_size
         self.hotkey = hotkey
         self.boost_key = boost_key
         self.device = device
+        self.beam_size = beam_size
+        self.npu_encoder = npu_encoder
         self.debug = debug
         self._type_text = _get_typer()
 
@@ -175,13 +401,19 @@ class Scribe:
         self.shutdown = threading.Event()
 
     def load_model(self):
-        self.transcriber = make_transcriber(self.device)
+        self.transcriber = make_transcriber(self.device, self.beam_size, self.npu_encoder)
         self.transcriber.load(self.model_size)
 
     def _ensure_heavy_transcriber(self):
         if self.heavy_transcriber is None:
             print("  First use of heavy model — loading (one-time)...")
-            self.heavy_transcriber = make_transcriber(self.device)
+            # The heavy model has its own encoder; a custom --npu-encoder only
+            # applies to the primary model, so don't pass it here. On the ONNX
+            # backend use the int8 build — large-v3-turbo in fp32 is a ~3 GB
+            # download and slow on CPU; int8 is far lighter and still accurate.
+            self.heavy_transcriber = make_transcriber(
+                self.device, self.beam_size, precision="_int8"
+            )
             self.heavy_transcriber.load(HEAVY_MODEL)
         return self.heavy_transcriber
 
@@ -281,6 +513,11 @@ class Scribe:
     def _match_key(self, key, target):
         if key == target:
             return True
+        # On some Windows keyboard layouts, the Right Alt key is reported as
+        # AltGr (vk 165) instead of alt_r. Treat the two as equivalent so the
+        # default `ralt` hotkey works everywhere.
+        if target in RIGHT_ALT_KEYS and key in RIGHT_ALT_KEYS:
+            return True
         if hasattr(key, 'vk') and hasattr(target, 'value') and hasattr(target.value, 'vk'):
             return key.vk == target.value.vk
         return False
@@ -309,7 +546,12 @@ class Scribe:
         if PLATFORM == "Linux":
             session = os.environ.get("XDG_SESSION_TYPE", "x11")
             print(f"  Display: {session}")
-        print("  Backend:", "GPU (PyTorch CUDA fp16)" if self.device == "cuda" else "CPU (CTranslate2 int8)")
+        backends = {
+            "cuda": "GPU (PyTorch CUDA fp16)",
+            "npu": "NPU (ONNX Runtime / QNN — Hexagon, CPU decoder)",
+            "cpu": "CPU (CTranslate2 int8)",
+        }
+        print("  Backend:", backends.get(self.device, backends["cpu"]))
         self.load_model()
         self.worker.start()
 
@@ -344,6 +586,7 @@ HOTKEY_MAP = {
     "rctrl": keyboard.Key.ctrl_r,
     "lctrl": keyboard.Key.ctrl_l,
     "ralt": keyboard.Key.alt_r,
+    "altgr": keyboard.Key.alt_gr,
     "lalt": keyboard.Key.alt_l,
     "rshift": keyboard.Key.shift_r,
     "scroll_lock": keyboard.Key.scroll_lock,
@@ -358,6 +601,11 @@ def detect_cuda():
         return torch.cuda.is_available()
     except ImportError:
         return False
+
+
+def detect_qnn():
+    """True if the Qualcomm Hexagon NPU (QNN execution provider) is available."""
+    return _ensure_qnn_registered() is not None
 
 
 def main():
@@ -386,9 +634,22 @@ def main():
     )
     parser.add_argument(
         "--device", "-d",
-        choices=["cpu", "cuda", "auto"],
+        choices=["cpu", "cuda", "npu", "auto"],
         default="auto",
-        help="Compute device (default: auto-detect)",
+        help="Compute device: cpu, cuda (NVIDIA), npu (Qualcomm Hexagon), auto",
+    )
+    parser.add_argument(
+        "--beam-size",
+        type=int,
+        default=1,
+        help="Beam search width (default: 1 = greedy, fastest)",
+    )
+    parser.add_argument(
+        "--npu-encoder",
+        default=None,
+        metavar="PATH",
+        help="Path to a QNN-ready ONNX encoder to offload onto the Hexagon NPU "
+             "(npu device only). Without it the encoder runs on the native-ARM64 CPU.",
     )
     parser.add_argument(
         "--debug",
@@ -400,7 +661,12 @@ def main():
     print("\n  === Scribe ===\n")
 
     if args.device == "auto":
-        device = "cuda" if detect_cuda() else "cpu"
+        if detect_cuda():
+            device = "cuda"
+        elif detect_qnn():
+            device = "npu"
+        else:
+            device = "cpu"
     else:
         device = args.device
 
@@ -412,6 +678,8 @@ def main():
         hotkey=hotkey,
         boost_key=boost_key,
         device=device,
+        beam_size=args.beam_size,
+        npu_encoder=args.npu_encoder,
         debug=args.debug,
     )
 

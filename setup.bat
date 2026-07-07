@@ -20,6 +20,11 @@ if errorlevel 1 (
 for /f "tokens=2 delims= " %%v in ('python --version 2^>^&1') do set PYVER=%%v
 echo   Found Python %PYVER%
 
+:: ── Windows on ARM (Snapdragon) ───────────────────────────────────────────
+:: faster-whisper / CTranslate2 has no ARM64 build, so on Snapdragon we set up
+:: the native-ARM64, NPU-ready ONNX backend instead.
+if /i "%PROCESSOR_ARCHITECTURE%"=="ARM64" goto npu_setup
+
 :: ── Virtual environment ───────────────────────────────────────────────────
 
 echo   [1/3] Setting up Python environment...
@@ -73,3 +78,34 @@ echo   Hold Right Alt and speak. Release to transcribe.
 echo   Hold Right Shift + Right Alt for high-accuracy mode.
 echo.
 pause
+exit /b 0
+
+:: ── NPU backend (Windows on ARM / Snapdragon) ─────────────────────────────
+:npu_setup
+set "VENV_NPU=%SCRIPT_DIR%.venv-npu"
+echo.
+echo   Windows on ARM detected (Snapdragon). Setting up the NPU backend.
+echo   (native ARM64; the encoder is offloaded to the Hexagon NPU when a
+echo    QNN-ready model is available, otherwise it runs on the ARM64 CPU.)
+echo.
+echo   [1/3] Setting up Python environment...
+python -m venv "%VENV_NPU%"
+call "%VENV_NPU%\Scripts\activate.bat"
+python -m pip install --upgrade pip -q
+
+echo   [2/3] Installing dependencies (onnxruntime-qnn, transformers)...
+pip install -r "%SCRIPT_DIR%requirements-npu.txt" -q
+
+echo   [3/3] Downloading speech models (one-time; the boost model is large)...
+python "%SCRIPT_DIR%setup-npu-models.py"
+
+echo.
+echo   Setup complete.
+echo.
+echo   scribe-npu.bat       Start Scribe (native ARM64, NPU-ready)
+echo.
+echo   Hold Right Alt and speak. Release to transcribe.
+echo   Hold Right Shift + Right Alt for high-accuracy mode.
+echo.
+pause
+exit /b 0

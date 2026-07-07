@@ -85,6 +85,25 @@ The tradeoff: GPU mode takes longer to start up (~5s to load the model vs ~1s fo
 
 If you don't have an NVIDIA GPU, CPU mode works fine. The CPU backend with `small.en` transcribes a 5-second clip in about 1.4 seconds, which is plenty fast for normal use.
 
+## Snapdragon / Windows on ARM (NPU)
+
+On Windows-on-ARM laptops (Snapdragon X) the CPU backend can't use `faster-whisper` — its `ctranslate2` engine has no ARM64 build, so it would only run under slow x64 emulation. Scribe ships a third backend for these machines: a **native-ARM64 ONNX Runtime** backend that runs Whisper as ONNX models with no PyTorch and no CTranslate2.
+
+```
+setup.bat            detects Snapdragon and sets up the NPU environment
+scribe-npu.bat       start Scribe on the native-ARM64 / NPU-ready backend
+```
+
+This is several times faster than the emulated CPU path and stays fully offline (models are standard ONNX Whisper weights from the [onnx-community](https://huggingface.co/onnx-community) repos, downloaded once and cached). The decoder uses a key/value cache, so decoding cost grows with the number of words spoken rather than re-reading the whole sequence each step. Normal mode uses `small.en` (fp32); high-accuracy (boost) mode uses an int8 `large-v3-turbo`, downloaded on first use (~1 GB one-time). After the download the boost model loads in a few seconds and transcribes a short clip in ~3s.
+
+**About the NPU.** The heavy part of Whisper — the encoder — is offered to the Qualcomm Hexagon NPU through ONNX Runtime's QNN execution provider; the small autoregressive decoder stays on the CPU. Real NPU offload needs an encoder graph that the QNN/HTP runtime will accept, which in practice means a statically-quantized, QNN-prepared model (the kind Qualcomm AI Hub produces). The stock floating-point onnx-community encoders are **not** in that form, so by default the encoder runs on the native-ARM64 CPU (still a big win over emulation). If you have a QNN-ready encoder `.onnx`, point Scribe at it and it will run on the NPU automatically:
+
+```
+scribe-npu.bat --npu-encoder path\to\qnn_encoder.onnx
+```
+
+The startup line reports where the encoder actually ran (`encoder on Hexagon NPU (QNN)` vs `encoder on CPU (native ARM64)`).
+
 ## Configuration
 
 All options are passed as command-line flags. No config files to manage.
@@ -101,6 +120,15 @@ All options are passed as command-line flags. No config files to manage.
 
 # Change the boost key
 ./scribe --boost-key lalt         # Left Alt for high-accuracy mode
+
+# Faster decoding: greedy (default) vs beam search
+./scribe --beam-size 1            # greedy, fastest (default)
+./scribe --beam-size 5            # beam search, slightly more accurate
+
+# Pick the compute backend explicitly
+./scribe --device cpu             # faster-whisper (CTranslate2 int8)
+./scribe --device cuda            # NVIDIA GPU (PyTorch)
+./scribe --device npu             # native-ARM64 ONNX, NPU-ready (Snapdragon)
 
 # Debug key detection (prints every keypress)
 ./scribe --debug
