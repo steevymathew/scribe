@@ -7,6 +7,7 @@ import time
 import numpy as np
 
 from ..audio import SAMPLE_RATE
+from ..hub import hf_fetch
 from ..logsetup import ADVANCED
 from ..postproc import strip_annotations
 from ..vad import is_speech
@@ -52,24 +53,6 @@ def _ensure_qnn_registered():
     return _qnn_htp_path
 
 
-def _hf_fetch(repo, fname):
-    """hf_hub_download with a one-line console notice on first (real) download.
-
-    Progress bars are suppressed by the noise policy, so without this a
-    gigabyte-sized first download would look like a hang. A cheap HEAD checks
-    the file exists before announcing, so optional files (sidecars that only
-    big models have) can 404 without a misleading "Downloading..." line.
-    """
-    from huggingface_hub import get_hf_file_metadata, hf_hub_download, hf_hub_url
-    try:
-        return hf_hub_download(repo, fname, local_files_only=True)  # cached?
-    except Exception:
-        get_hf_file_metadata(hf_hub_url(repo, fname))  # 404s fast if absent
-        print(f"  Downloading {fname.rsplit('/', 1)[-1]} (one-time)...", flush=True)
-        log.info("downloading %s/%s", repo, fname)
-        return hf_hub_download(repo, fname)
-
-
 def _download_onnx(repo, fname):
     """Download an ONNX file plus its external-data sidecar, if it has one.
 
@@ -77,9 +60,9 @@ def _download_onnx(repo, fname):
     ``<name>.onnx_data`` file because they exceed ONNX's 2 GB single-file limit;
     the .onnx alone is just the graph and won't load without it.
     """
-    path = _hf_fetch(repo, fname)
+    path = hf_fetch(repo, fname)
     try:
-        _hf_fetch(repo, fname + "_data")  # weights sidecar, if present
+        hf_fetch(repo, fname + "_data")  # weights sidecar, if present
     except Exception:
         log.debug("no external-data sidecar for %s (normal for small models)", fname)
     return path
@@ -109,10 +92,19 @@ class ONNXTranscriber(Transcriber):
 
     ONNX_REPO_PREFIX = "onnx-community/whisper-"
 
-    def __init__(self, beam_size=1, npu_encoder=None, precision=""):
+    def __init__(self, beam_size=1, npu_encoder=None, precision="", language="en"):
         self._name = ""
         self._beam_size = beam_size  # decoder is greedy; kept for interface parity
         self._npu_encoder = npu_encoder
+        # Language support on this backend is English-only for now: the
+        # multilingual start-token sequence below hardcodes <|en|>. Wiring an
+        # arbitrary <|xx|> token is future work (needs per-language token
+        # validation + a multilingual primary model); until then any other
+        # requested language logs a warning and transcribes as English.
+        self._language = language
+        if language != "en":
+            log.warning("ONNX backend supports language='en' only for now; "
+                        "requested %r will transcribe as English", language)
         # "" = fp32 (most accurate), "_int8" = quantized (much smaller/faster to
         # load and run, used for the heavy boost model where it's still accurate).
         self._precision = precision

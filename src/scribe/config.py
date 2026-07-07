@@ -22,6 +22,9 @@ DEFAULTS = {
     "npu_encoder": None,
     "debug": False,
     "advanced": False,
+    "remove_fillers": False,
+    "language": "en",
+    "dictionary": {},  # {spoken: replacement}, a [dictionary] table in TOML
 }
 
 
@@ -66,6 +69,10 @@ def effective(cli_values):
     merged = dict(DEFAULTS)
     merged.update(load_file())
     merged.update({k: v for k, v in cli_values.items() if v is not None})
+    # Never hand out DEFAULTS' own mutable dict — a caller mutating the
+    # dictionary table must not silently change the defaults.
+    if merged.get("dictionary") is DEFAULTS["dictionary"]:
+        merged["dictionary"] = {}
     return merged
 
 
@@ -79,15 +86,30 @@ def _toml_value(v):
 
 
 def save(settings):
-    """Write settings to the config file (flat TOML). Returns the path."""
+    """Write settings to the config file. Returns the path.
+
+    Flat keys first, then dict-valued settings as TOML table sections
+    (e.g. [dictionary]) — tables must come after the flat keys or TOML
+    would attach the flat keys to the last table.
+    """
     os.makedirs(config_dir(), exist_ok=True)
     path = config_path()
     lines = ["# Scribe settings — CLI flags override these.\n"]
+    tables = []
     for key in DEFAULTS:
         value = settings.get(key)
         if value is None:
             continue
+        if isinstance(value, dict):
+            tables.append((key, value))
+            continue
         lines.append(f"{key} = {_toml_value(value)}\n")
+    for key, table in tables:
+        if not table:
+            continue
+        lines.append(f"\n[{key}]\n")
+        for k, v in table.items():
+            lines.append(f"{_toml_value(str(k))} = {_toml_value(v)}\n")
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.writelines(lines)
     log.info("saved config to %s", path)

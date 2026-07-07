@@ -61,6 +61,12 @@ def build_parser():
              "(npu device only). Without it the encoder runs on the native-ARM64 CPU.",
     )
     parser.add_argument(
+        "--remove-fillers",
+        action="store_const", const=True, default=None,
+        help="Remove filler words (um, uh, ...) from transcripts "
+             "(default: off; also a config key)",
+    )
+    parser.add_argument(
         "--debug",
         action="store_const", const=True, default=None,
         help="Print all key events for troubleshooting",
@@ -91,6 +97,7 @@ def main():
         "npu_encoder": args.npu_encoder,
         "debug": args.debug,
         "advanced": args.advanced,
+        "remove_fillers": args.remove_fillers,
     })
 
     if args.save_config:
@@ -120,6 +127,11 @@ def main():
         beam_size=settings["beam_size"],
         npu_encoder=settings["npu_encoder"],
         debug=settings["debug"],
+        postproc_settings={
+            "remove_fillers": settings["remove_fillers"],
+            "dictionary": settings["dictionary"],
+            "language": settings["language"],
+        },
     )
 
     if PLATFORM != "Windows":

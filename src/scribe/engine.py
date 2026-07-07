@@ -15,6 +15,7 @@ from .backends import Transcriber, make_transcriber
 from .hotkeys import key_name, match_key
 from .inject import get_typer
 from .logsetup import friendly_error
+from . import postproc, vad
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ PLATFORM = platform.system()
 
 class Scribe:
     def __init__(self, model_size, hotkey, boost_key, device, beam_size=1,
-                 npu_encoder=None, debug=False):
+                 npu_encoder=None, debug=False, postproc_settings=None):
         self.model_size = model_size
         self.hotkey = hotkey
         self.boost_key = boost_key
@@ -32,6 +33,12 @@ class Scribe:
         self.beam_size = beam_size
         self.npu_encoder = npu_encoder
         self.debug = debug
+        # None = defaults = near-no-op pipeline; also carries the language
+        # and custom-dictionary settings the backends consume (ROADMAP §7.4).
+        self.postproc_settings = postproc_settings
+        _pp = postproc_settings or {}
+        self.language = _pp.get("language", "en")
+        self.dictionary = _pp.get("dictionary") or {}
         self._type_text = get_typer()
 
         self.transcriber: Transcriber | None = None
@@ -48,7 +55,10 @@ class Scribe:
         self.shutdown = threading.Event()
 
     def load_model(self):
-        self.transcriber = make_transcriber(self.device, self.beam_size, self.npu_encoder)
+        self.transcriber = make_transcriber(
+            self.device, self.beam_size, self.npu_encoder,
+            language=self.language, dictionary=self.dictionary,
+        )
         self.transcriber.load(self.model_size)
 
     def _ensure_heavy_transcriber(self):
@@ -60,7 +70,8 @@ class Scribe:
             # download and slow on CPU; int8 is far lighter and still accurate.
             # Assign only after a successful load, so a failed load doesn't
             # leave a broken half-initialized transcriber behind.
-            tr = make_transcriber(self.device, self.beam_size, precision="_int8")
+            tr = make_transcriber(self.device, self.beam_size, precision="_int8",
+                                  language=self.language, dictionary=self.dictionary)
             tr.load(HEAVY_MODEL)
             self.heavy_transcriber = tr
         return self.heavy_transcriber
@@ -146,6 +157,17 @@ class Scribe:
             tr = self.transcriber
 
         t0 = time.monotonic()
+
+        # Pre-trim leading/trailing silence on the ONNX path only: Whisper
+        # hallucinates on padding-heavy clips there. The ct2 path keeps
+        # faster-whisper's own built-in VAD; leave it alone (ROADMAP §7.4).
+        if self.device == "npu":
+            audio = vad.trim_silence(audio)
+            if audio.size == 0:
+                elapsed = time.monotonic() - t0
+                print(f" -> (silence, {elapsed:.1f}s) [{tr.backend_label}]")
+                return
+
         try:
             text = tr.transcribe(audio)
         except Exception:
@@ -153,6 +175,7 @@ class Scribe:
             friendly_error("Transcription failed")
             return
 
+        text = postproc.process(text, self.postproc_settings)
         elapsed = time.monotonic() - t0
 
         if not text:

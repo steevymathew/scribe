@@ -11,10 +11,15 @@ log = logging.getLogger(__name__)
 class CPUTranscriber(Transcriber):
     """CTranslate2 int8 — runs anywhere, no GPU required."""
 
-    def __init__(self, beam_size=1):
+    def __init__(self, beam_size=1, language="en", dictionary=None):
         self._model = None
         self._name = ""
         self._beam_size = beam_size
+        self._language = language
+        # Custom dictionary values become the initial_prompt, biasing Whisper
+        # toward the user's vocabulary (proper nouns, jargon) — ROADMAP §7.4.
+        self._initial_prompt = ", ".join(
+            str(v) for v in (dictionary or {}).values()) or None
 
     def load(self, model_name):
         from faster_whisper import WhisperModel
@@ -27,8 +32,9 @@ class CPUTranscriber(Transcriber):
     def transcribe(self, audio):
         segments, _ = self._model.transcribe(
             audio,
-            language="en",
+            language=self._language,
             beam_size=self._beam_size,
+            initial_prompt=self._initial_prompt,
             vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=500, speech_pad_ms=200),
         )

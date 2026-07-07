@@ -65,6 +65,36 @@ class ConfigPrecedence(unittest.TestCase):
         self.assertTrue(loaded["advanced"])
         self.assertEqual(loaded["beam_size"], 5)
 
+    def test_dictionary_table_round_trip(self):
+        settings = dict(config.DEFAULTS)
+        settings["dictionary"] = {
+            "jira": "Jira",
+            "doctor smith": "Dr. Smith",
+            'quo"te': 'va"lue',  # quotes must survive escaping
+        }
+        config.save(settings)
+        loaded = config.effective(self._no_cli())
+        self.assertEqual(loaded["dictionary"], settings["dictionary"])
+
+    def test_dictionary_loaded_from_file_section(self):
+        with open(config.config_path(), "w", encoding="utf-8") as f:
+            f.write('model = "base.en"\n\n[dictionary]\njira = "Jira"\n')
+        loaded = config.effective(self._no_cli())
+        self.assertEqual(loaded["dictionary"], {"jira": "Jira"})
+        self.assertEqual(loaded["model"], "base.en")
+
+    def test_empty_dictionary_default(self):
+        loaded = config.effective(self._no_cli())
+        self.assertEqual(loaded["dictionary"], {})
+        self.assertFalse(loaded["remove_fillers"])
+        self.assertEqual(loaded["language"], "en")
+
+    def test_defaults_dict_not_shared(self):
+        # Mutating an effective() result must never leak into DEFAULTS.
+        loaded = config.effective(self._no_cli())
+        loaded["dictionary"]["x"] = "y"
+        self.assertEqual(config.DEFAULTS["dictionary"], {})
+
 
 if __name__ == "__main__":
     unittest.main()

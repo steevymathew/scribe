@@ -9,15 +9,19 @@ from .base import Transcriber
 
 
 def make_transcriber(device: str, beam_size: int = 1, npu_encoder=None,
-                     precision: str = "") -> Transcriber:
+                     precision: str = "", language: str = "en",
+                     dictionary=None) -> Transcriber:
+    # `dictionary` biases Whisper toward the user's vocabulary via
+    # initial_prompt where the backend supports it (ct2); the post-hoc
+    # replacement pass in postproc covers every backend either way.
     if device == "cuda":
         from .torch_cuda import GPUTranscriber
-        return GPUTranscriber(beam_size)
+        return GPUTranscriber(beam_size, language)
     if device == "npu":
         from .onnx import ONNXTranscriber
-        return ONNXTranscriber(beam_size, npu_encoder, precision)
+        return ONNXTranscriber(beam_size, npu_encoder, precision, language)
     from .ct2 import CPUTranscriber
-    return CPUTranscriber(beam_size)
+    return CPUTranscriber(beam_size, language, dictionary)
 
 
 def detect_cuda():

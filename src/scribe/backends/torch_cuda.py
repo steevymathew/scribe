@@ -11,10 +11,11 @@ log = logging.getLogger(__name__)
 class GPUTranscriber(Transcriber):
     """PyTorch CUDA fp16 — fast inference on NVIDIA GPUs."""
 
-    def __init__(self, beam_size=1):
+    def __init__(self, beam_size=1, language="en"):
         self._model = None
         self._name = ""
         self._beam_size = beam_size
+        self._language = language
 
     def load(self, model_name):
         import whisper
@@ -27,7 +28,7 @@ class GPUTranscriber(Transcriber):
     def transcribe(self, audio):
         result = self._model.transcribe(
             audio,
-            language="en",
+            language=self._language,
             beam_size=self._beam_size,
             fp16=True,
             no_speech_threshold=0.6,
