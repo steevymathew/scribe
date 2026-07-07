@@ -279,6 +279,8 @@ class Scribe:
             on_release=self.on_release,
         )
         listener.start()
+        log.info("ready: model=%s device=%s hotkey=%s boost=%s",
+                 self.model_size, self.device, hotkey_name, boost_name)
 
         try:
             self.shutdown.wait()

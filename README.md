@@ -36,7 +36,17 @@ sudo dnf install -y xdotool portaudio-devel
 sudo pacman -S xdotool portaudio
 ```
 
-### Windows
+### Windows — installer (recommended)
+
+Download `Scribe-Setup-x64.exe` (Intel/AMD) or `Scribe-Setup-arm64.exe`
+(Snapdragon) from Releases, run it, and follow the first-run wizard: pick your
+microphone, pick your push-to-talk key, and it downloads the speech model
+once. No Python, no terminal. Scribe then lives in your system tray.
+
+Windows SmartScreen may warn because the installer is unsigned — click
+"More info → Run anyway". (Maintainers: see [BUILDING.md](BUILDING.md).)
+
+### Windows — from source
 
 ```
 git clone https://github.com/steevymathew/Scribe.git
@@ -44,6 +54,8 @@ cd Scribe
 setup.bat
 scribe.bat          # CPU mode
 scribe-gpu.bat      # GPU mode (NVIDIA)
+scribe-npu.bat      # Snapdragon (native ARM64 / NPU-ready)
+scribe-ui.bat       # system-tray app with settings UI
 ```
 
 Requires Python 3.10+ installed and on your PATH. Get it from [python.org](https://www.python.org/downloads/) — check "Add Python to PATH" during the install. No other system dependencies needed; Windows has built-in audio and keyboard APIs that Scribe uses directly.
