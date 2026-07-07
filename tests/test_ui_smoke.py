@@ -66,6 +66,16 @@ class UISmoke(unittest.TestCase):
             self.assertFalse(tray.icon().isNull())
         tray.deleteLater()
 
+    def test_first_run_wizard_builds(self):
+        from scribe import config
+        from scribe.ui.wizard import FirstRunWizard
+
+        wizard = FirstRunWizard(config.effective({k: None for k in config.DEFAULTS}))
+        # 5 pages: welcome, mic, hotkey, download, done.
+        self.assertEqual(len(wizard.pageIds()), 5)
+        self.assertIsNone(wizard.result_settings)  # nothing saved until Finish
+        wizard.deleteLater()
+
 
 if __name__ == "__main__":
     unittest.main()

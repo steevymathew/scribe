@@ -16,7 +16,8 @@ import threading
 from PySide6.QtCore import QDir, QLockFile, QTimer
 from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
-from .. import __version__
+from .. import __version__, config
+from ..hotkeys import HOTKEY_MAP
 from .logviewer import LogViewer
 from .overlay import Overlay
 from .settings import SettingsDialog
@@ -194,6 +195,18 @@ def run_ui(scribe, settings):
         # Wayland compositors without StatusNotifier, odd sessions, etc.
         # Keep running: the overlay still shows recording state.
         print("  No system tray available — overlay only (ROADMAP §7).")
+
+    # First run (no config file yet): onboard before the engine starts.
+    # Cancelling skips saving, so the wizard simply reappears next launch.
+    if not os.path.exists(config.config_path()):
+        from .wizard import FirstRunWizard
+
+        wizard = FirstRunWizard(settings)
+        if wizard.exec() and wizard.result_settings:
+            settings = wizard.result_settings
+            hotkey = HOTKEY_MAP.get(settings.get("hotkey"))
+            if hotkey is not None:
+                scribe.hotkey = hotkey
 
     ui = ScribeUI(scribe, settings, app=app)
     ui.start_engine()
