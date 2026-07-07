@@ -22,6 +22,9 @@ DEFAULTS = {
     "npu_encoder": None,
     "debug": False,
     "advanced": False,
+    # Preferred input device name (Settings → Audio). None = system default.
+    # Persisted for the UI; the engine currently records from the default mic.
+    "input_device": None,
 }
 
 
