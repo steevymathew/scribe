@@ -82,6 +82,12 @@ def build_parser():
         action="store_true",
         help=f"Write the effective settings to {config.config_path()} and exit",
     )
+    parser.add_argument(
+        "--ui",
+        action="store_true",
+        help="Run with the desktop UI: system-tray icon, recording overlay "
+             "and settings window (requires PySide6)",
+    )
     return parser
 
 
@@ -136,6 +142,12 @@ def main():
 
     if PLATFORM != "Windows":
         signal.signal(signal.SIGTERM, lambda *_: scribe.shutdown.set())
+
+    if args.ui:
+        # Lazy import: headless machines (CLI, systemd) never touch Qt, and
+        # nothing outside scribe.ui may import PySide6 (ROADMAP §8).
+        from .ui.app import run_ui
+        raise SystemExit(run_ui(scribe, settings))
 
     scribe.run()
 

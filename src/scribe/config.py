@@ -25,6 +25,9 @@ DEFAULTS = {
     "remove_fillers": False,
     "language": "en",
     "dictionary": {},  # {spoken: replacement}, a [dictionary] table in TOML
+    # Preferred input device name (Settings → Audio). None = system default.
+    # Persisted for the UI; the engine currently records from the default mic.
+    "input_device": None,
 }
 
 
