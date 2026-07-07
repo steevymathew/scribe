@@ -9,6 +9,8 @@ Runs on Linux (X11/Wayland) and Windows.
 """
 
 import argparse
+import logging
+import logging.handlers
 import os
 import platform
 import signal
@@ -19,9 +21,32 @@ import time
 from abc import ABC, abstractmethod
 from collections import deque
 
+# ---------------------------------------------------------------------------
+# Console/noise policy (ROADMAP §5). Decided before any noisy library loads:
+# by default the console shows only Scribe's own status lines; every warning,
+# traceback and download bar from third-party libraries goes to the log file.
+# --advanced (or SCRIBE_ADVANCED=1) streams everything to the console too.
+# ---------------------------------------------------------------------------
+
+ADVANCED = "--advanced" in sys.argv or os.environ.get("SCRIBE_ADVANCED") == "1"
+
+# Never phone home, regardless of mode (offline is a core constraint).
+os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+
+if not ADVANCED:
+    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+    os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+    os.environ.setdefault("HF_HUB_VERBOSITY", "error")
+    os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+    os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
+    os.environ.setdefault("TQDM_DISABLE", "1")
+
 import numpy as np
 import sounddevice as sd
 from pynput import keyboard
+
+log = logging.getLogger("scribe")
+LOG_PATH = None  # set by setup_logging()
 
 
 SAMPLE_RATE = 16000
@@ -33,6 +58,64 @@ PLATFORM = platform.system()
 # Right Alt is reported as alt_r on most layouts but as alt_gr on some
 # (notably several Windows keyboard layouts). Treat both as "Right Alt".
 RIGHT_ALT_KEYS = frozenset({keyboard.Key.alt_r, keyboard.Key.alt_gr})
+
+
+# ---------------------------------------------------------------------------
+# Logging (ROADMAP §5)
+# ---------------------------------------------------------------------------
+
+def _log_dir():
+    if PLATFORM == "Windows":
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        return os.path.join(base, "Scribe", "logs")
+    base = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+    return os.path.join(base, "scribe", "logs")
+
+
+def setup_logging(advanced=ADVANCED):
+    """Route everything to a rotating log file; console stays clean.
+
+    In advanced mode the full log also streams to the console. Returns the
+    log file path. Configuring a root handler here also disables logging's
+    last-resort stderr handler, which is what let third-party warnings splat
+    onto the console before.
+    """
+    global LOG_PATH
+    os.makedirs(_log_dir(), exist_ok=True)
+    LOG_PATH = os.path.join(_log_dir(), "scribe.log")
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+    fh = logging.handlers.RotatingFileHandler(
+        LOG_PATH, maxBytes=2_000_000, backupCount=5, encoding="utf-8"
+    )
+    fh.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s")
+    )
+    root.addHandler(fh)
+    if advanced:
+        ch = logging.StreamHandler()
+        ch.setFormatter(logging.Formatter("%(levelname)-7s %(name)s: %(message)s"))
+        root.addHandler(ch)
+    logging.captureWarnings(True)  # warnings.warn(...) -> log, not console
+    # Cap per-request DEBUG chatter so the rotating file holds useful history.
+    for noisy in ("httpcore", "httpx", "urllib3", "filelock"):
+        logging.getLogger(noisy).setLevel(logging.INFO)
+
+    def _hook(exc_type, exc, tb):
+        if issubclass(exc_type, KeyboardInterrupt):
+            return
+        log.critical("unhandled exception", exc_info=(exc_type, exc, tb))
+        friendly_error("Scribe hit an unexpected error and may need a restart")
+
+    sys.excepthook = _hook
+    threading.excepthook = lambda a: _hook(a.exc_type, a.exc_value, a.exc_traceback)
+    return LOG_PATH
+
+
+def friendly_error(msg):
+    """One calm line for the user; the traceback lives in the log file."""
+    where = f" (details: {LOG_PATH})" if LOG_PATH else ""
+    print(f"\n  {msg}{where}", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------
@@ -133,19 +216,41 @@ def _ensure_qnn_registered():
         import onnxruntime as ort
         import onnxruntime_qnn as oq
     except ImportError:
+        log.debug("onnxruntime/onnxruntime_qnn not installed; no NPU support")
         return None
+    if not ADVANCED:
+        ort.set_default_logger_severity(3)
     try:
         os.add_dll_directory(oq.LIB_DIR_FULL_PATH)
     except (OSError, AttributeError):
-        pass
+        log.debug("could not add QNN DLL directory", exc_info=True)
     try:
         if "QNNExecutionProvider" not in ort.get_available_providers():
             ort.register_execution_provider_library(oq.get_ep_name(), oq.get_library_path())
     except Exception:
-        pass
+        log.debug("QNN provider registration failed", exc_info=True)
     if "QNNExecutionProvider" in ort.get_available_providers():
         _qnn_htp_path = oq.get_qnn_htp_path()
+    log.info("QNN provider %s", "available" if _qnn_htp_path else "not available")
     return _qnn_htp_path
+
+
+def _hf_fetch(repo, fname):
+    """hf_hub_download with a one-line console notice on first (real) download.
+
+    Progress bars are suppressed by the noise policy, so without this a
+    gigabyte-sized first download would look like a hang. A cheap HEAD checks
+    the file exists before announcing, so optional files (sidecars that only
+    big models have) can 404 without a misleading "Downloading..." line.
+    """
+    from huggingface_hub import get_hf_file_metadata, hf_hub_download, hf_hub_url
+    try:
+        return hf_hub_download(repo, fname, local_files_only=True)  # cached?
+    except Exception:
+        get_hf_file_metadata(hf_hub_url(repo, fname))  # 404s fast if absent
+        print(f"  Downloading {fname.rsplit('/', 1)[-1]} (one-time)...", flush=True)
+        log.info("downloading %s/%s", repo, fname)
+        return hf_hub_download(repo, fname)
 
 
 def _download_onnx(repo, fname):
@@ -155,12 +260,11 @@ def _download_onnx(repo, fname):
     ``<name>.onnx_data`` file because they exceed ONNX's 2 GB single-file limit;
     the .onnx alone is just the graph and won't load without it.
     """
-    from huggingface_hub import hf_hub_download
-    path = hf_hub_download(repo, fname)
+    path = _hf_fetch(repo, fname)
     try:
-        hf_hub_download(repo, fname + "_data")  # weights sidecar, if present
+        _hf_fetch(repo, fname + "_data")  # weights sidecar, if present
     except Exception:
-        pass
+        log.debug("no external-data sidecar for %s (normal for small models)", fname)
     return path
 
 
@@ -411,15 +515,16 @@ class Scribe:
             # applies to the primary model, so don't pass it here. On the ONNX
             # backend use the int8 build — large-v3-turbo in fp32 is a ~3 GB
             # download and slow on CPU; int8 is far lighter and still accurate.
-            self.heavy_transcriber = make_transcriber(
-                self.device, self.beam_size, precision="_int8"
-            )
-            self.heavy_transcriber.load(HEAVY_MODEL)
+            # Assign only after a successful load, so a failed load doesn't
+            # leave a broken half-initialized transcriber behind.
+            tr = make_transcriber(self.device, self.beam_size, precision="_int8")
+            tr.load(HEAVY_MODEL)
+            self.heavy_transcriber = tr
         return self.heavy_transcriber
 
     def _audio_callback(self, indata, frames, time_info, status):
         if status:
-            print(f"  Audio: {status}", file=sys.stderr)
+            log.warning("audio stream status: %s", status)
         if self.recording:
             self.audio_chunks.append(indata.copy())
 
@@ -440,8 +545,12 @@ class Scribe:
                 )
                 self.stream.start()
                 print("  [REC]", end="", flush=True)
-            except Exception as e:
-                print(f"\n  Mic error: {e}", file=sys.stderr)
+            except Exception:
+                log.exception("microphone stream failed to start")
+                friendly_error(
+                    "Microphone unavailable — check the input device in your "
+                    "system sound settings"
+                )
                 self.recording = False
 
     def stop_recording(self):
@@ -485,7 +594,14 @@ class Scribe:
             self.work_event.clear()
             while self.work_queue:
                 audio, use_heavy = self.work_queue.popleft()
-                self._transcribe_and_type(audio, use_heavy)
+                try:
+                    self._transcribe_and_type(audio, use_heavy)
+                except Exception:
+                    # Never let one bad clip (or a failed model load) take the
+                    # worker down with a raw traceback — log it, tell the user,
+                    # stay alive for the next dictation.
+                    log.exception("transcription worker error")
+                    friendly_error("Transcription failed — trying the next one fresh")
 
     def _transcribe_and_type(self, audio, use_heavy=False):
         if use_heavy:
@@ -496,8 +612,9 @@ class Scribe:
         t0 = time.monotonic()
         try:
             text = tr.transcribe(audio)
-        except Exception as e:
-            print(f"\n  Transcription error: {e}", file=sys.stderr)
+        except Exception:
+            log.exception("transcription failed (%s)", tr.backend_label)
+            friendly_error("Transcription failed")
             return
 
         elapsed = time.monotonic() - t0
@@ -656,9 +773,19 @@ def main():
         action="store_true",
         help="Print all key events for troubleshooting",
     )
+    parser.add_argument(
+        "--advanced",
+        action="store_true",
+        help="Advanced mode: stream the full log (warnings, tracebacks, "
+             "third-party output) to the console instead of only the log file",
+    )
     args = parser.parse_args()
 
+    log_path = setup_logging(ADVANCED or args.advanced)
+    log.info("scribe starting: platform=%s argv=%s", PLATFORM, sys.argv[1:])
+
     print("\n  === Scribe ===\n")
+    print(f"  Log: {log_path}")
 
     if args.device == "auto":
         if detect_cuda():
