@@ -159,7 +159,7 @@ Check status with `systemctl --user status scribe`. Stop with `systemctl --user 
 
 ## Architecture
 
-Scribe is a single Python file with no framework dependencies. Here's what happens when you press the key:
+Scribe is a small Python package (`src/scribe/`) with no framework dependencies — the engine is importable and fully usable headless; `scribe.py` at the repo root is a compatibility shim for the launchers. Settings persist in a TOML config file (`--save-config` writes your current flags; CLI flags always override it). Here's what happens when you press the key:
 
 1. A `pynput` keyboard listener detects the push-to-talk key. This is event-driven, not polling, so it uses close to zero CPU while idle.
 2. A `sounddevice` input stream starts capturing from the default microphone at 16 kHz mono.
