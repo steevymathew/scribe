@@ -215,27 +215,20 @@ class Scribe:
         log.info("transcribe start: %.1fs audio heavy=%s [%s]",
                  len(audio) / SAMPLE_RATE, use_heavy, tr.backend_label)
 
-        # Pre-trim leading/trailing silence on the ONNX path only: Whisper
-        # hallucinates on padding-heavy clips there. The ct2 path keeps
-        # faster-whisper's own built-in VAD; leave it alone (ROADMAP §7.4).
-        # If the VAD trims everything but the clip clearly has energy, keep the
-        # original — dropping real speech (and, worse, leaving the UI stuck on
-        # "Transcribing") is far worse than an occasional padded clip.
+        # On the ONNX path, VAD only *trims* leading/trailing padding (Whisper
+        # hallucinates on padding-heavy clips). It must never *drop* the clip:
+        # gating on VAD was eating real speech on quieter mics. If the trim
+        # comes back empty, transcribe the original and let Whisper decide —
+        # true silence returns a [BLANK_AUDIO] annotation that postproc strips.
+        # The ct2 path keeps faster-whisper's own built-in VAD.
         if self.device == "npu":
             trimmed = vad.trim_silence(audio)
-            if trimmed.size == 0:
-                if vad.has_energy(audio):
-                    log.info("VAD found no speech but clip has energy; "
-                             "transcribing untrimmed")
-                else:
-                    elapsed = time.monotonic() - t0
-                    log.info("no speech detected (%.1fs); skipped", elapsed)
-                    _out(f" -> (silence, {elapsed:.1f}s) [{tr.backend_label}]")
-                    self._emit("injected", text="", elapsed=elapsed,
-                               backend=tr.backend_label)
-                    return
-            else:
+            if trimmed.size:
+                log.info("VAD trimmed %.1fs -> %.1fs",
+                         len(audio) / SAMPLE_RATE, len(trimmed) / SAMPLE_RATE)
                 audio = trimmed
+            else:
+                log.info("VAD found no clear speech; transcribing untrimmed")
 
         try:
             text = tr.transcribe(audio)

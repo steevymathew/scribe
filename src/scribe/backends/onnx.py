@@ -10,7 +10,6 @@ from ..audio import SAMPLE_RATE
 from ..hub import hf_fetch
 from ..logsetup import ADVANCED
 from ..postproc import strip_annotations
-from ..vad import is_speech
 from .base import Transcriber
 
 log = logging.getLogger(__name__)
@@ -186,9 +185,12 @@ class ONNXTranscriber(Transcriber):
               f"(KV cache) in {time.monotonic() - t0:.1f}s")
 
     def transcribe(self, audio):
-        # No VAD in this backend yet, so gate near-silence to avoid the
-        # decoder hallucinating (ROADMAP Phase 4 upgrades this to Silero VAD).
-        if not is_speech(audio):
+        # No silence gate here: gating on VAD dropped real speech on quieter
+        # mics (it judged the clip "silence" and returned nothing). Let Whisper
+        # transcribe whatever it's given; true silence comes back as a
+        # [BLANK_AUDIO] annotation, which postproc strips to "". Empty input is
+        # the only thing worth short-circuiting.
+        if audio is None or len(audio) == 0:
             return ""
 
         feats = self._processor.feature_extractor(
