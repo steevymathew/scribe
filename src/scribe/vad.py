@@ -36,6 +36,13 @@ def _rms_is_speech(audio):
     return float(np.sqrt(np.mean(np.square(audio)))) >= SILENCE_RMS
 
 
+def has_energy(audio):
+    """True if the clip carries audible energy (RMS gate), independent of the
+    Silero model. Used as a safety net so an over-aggressive VAD never drops a
+    clip that clearly contains sound."""
+    return _rms_is_speech(audio)
+
+
 def _get_session():
     """The Silero ONNX session, loaded once; None if unavailable."""
     global _session, _session_failed

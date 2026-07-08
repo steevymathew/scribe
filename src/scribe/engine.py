@@ -3,6 +3,7 @@
 import logging
 import os
 import platform
+import sys
 import threading
 import time
 from collections import deque
@@ -21,6 +22,22 @@ log = logging.getLogger(__name__)
 
 HEAVY_MODEL = "large-v3-turbo"
 PLATFORM = platform.system()
+
+
+def _out(msg, end="\n"):
+    """Write a console status line, safely.
+
+    The windowed build (scribe-tray.exe) has no stdout — sys.stdout is None —
+    so a bare print() would raise. Status also goes to the log, which is the
+    only diagnostic trail a windowed app has.
+    """
+    try:
+        stream = sys.stdout
+        if stream is not None:
+            stream.write(msg + end)
+            stream.flush()
+    except Exception:
+        pass
 
 
 class Scribe:
@@ -116,7 +133,8 @@ class Scribe:
             self.audio_chunks = []
             try:
                 self.stream = open_input_stream(self._audio_callback)
-                print("  [REC]", end="", flush=True)
+                _out("  [REC]", end="")
+                log.info("recording started")
                 self._emit("recording_started")
             except Exception:
                 log.exception("microphone stream failed to start")
@@ -146,7 +164,8 @@ class Scribe:
             self.audio_chunks = []
 
         if not chunks:
-            print(" skip (no audio)")
+            _out(" skip (no audio)")
+            log.info("recording stopped: no audio captured")
             self._emit("recording_stopped", duration=0.0)
             return
 
@@ -154,14 +173,16 @@ class Scribe:
         duration = len(audio) / SAMPLE_RATE
 
         if duration < MIN_AUDIO_SEC:
-            print(f" skip ({duration:.1f}s too short)")
+            _out(f" skip ({duration:.1f}s too short)")
+            log.info("recording stopped: %.2fs too short", duration)
             self._emit("recording_stopped", duration=duration)
             return
         if duration > MAX_AUDIO_SEC:
             audio = audio[: int(MAX_AUDIO_SEC * SAMPLE_RATE)]
             duration = MAX_AUDIO_SEC
 
-        print(f" {duration:.1f}s", end="", flush=True)
+        _out(f" {duration:.1f}s", end="")
+        log.info("recording stopped: %.1fs queued for transcription", duration)
         self._emit("recording_stopped", duration=duration)
         self.work_queue.append((audio, use_heavy))
         self.work_event.set()
@@ -191,16 +212,30 @@ class Scribe:
             tr = self.transcriber
 
         t0 = time.monotonic()
+        log.info("transcribe start: %.1fs audio heavy=%s [%s]",
+                 len(audio) / SAMPLE_RATE, use_heavy, tr.backend_label)
 
         # Pre-trim leading/trailing silence on the ONNX path only: Whisper
         # hallucinates on padding-heavy clips there. The ct2 path keeps
         # faster-whisper's own built-in VAD; leave it alone (ROADMAP §7.4).
+        # If the VAD trims everything but the clip clearly has energy, keep the
+        # original — dropping real speech (and, worse, leaving the UI stuck on
+        # "Transcribing") is far worse than an occasional padded clip.
         if self.device == "npu":
-            audio = vad.trim_silence(audio)
-            if audio.size == 0:
-                elapsed = time.monotonic() - t0
-                print(f" -> (silence, {elapsed:.1f}s) [{tr.backend_label}]")
-                return
+            trimmed = vad.trim_silence(audio)
+            if trimmed.size == 0:
+                if vad.has_energy(audio):
+                    log.info("VAD found no speech but clip has energy; "
+                             "transcribing untrimmed")
+                else:
+                    elapsed = time.monotonic() - t0
+                    log.info("no speech detected (%.1fs); skipped", elapsed)
+                    _out(f" -> (silence, {elapsed:.1f}s) [{tr.backend_label}]")
+                    self._emit("injected", text="", elapsed=elapsed,
+                               backend=tr.backend_label)
+                    return
+            else:
+                audio = trimmed
 
         try:
             text = tr.transcribe(audio)
@@ -212,16 +247,23 @@ class Scribe:
 
         text = postproc.process(text, self.postproc_settings)
         elapsed = time.monotonic() - t0
+        log.info("transcribe done in %.1fs: %r", elapsed, text)
 
         if not text:
-            print(f" -> (silence, {elapsed:.1f}s) [{tr.backend_label}]")
+            _out(f" -> (silence, {elapsed:.1f}s) [{tr.backend_label}]")
             self._emit("injected", text="", elapsed=elapsed,
                        backend=tr.backend_label)
             return
 
-        print(f" -> \"{text}\" ({elapsed:.1f}s) [{tr.backend_label}]")
-        if text:
+        _out(f" -> \"{text}\" ({elapsed:.1f}s) [{tr.backend_label}]")
+        try:
             self._type_text(text)
+            log.info("typed %d chars", len(text))
+        except Exception:
+            # A typing failure must not leave the UI stuck — log, tell the
+            # user, but still emit the terminal event below.
+            log.exception("text injection failed")
+            friendly_error("Couldn't type the text — see the log")
         self._emit("injected", text=text, elapsed=elapsed,
                    backend=tr.backend_label)
 
@@ -229,12 +271,12 @@ class Scribe:
         if self.paused:
             return
         if self.debug:
-            print(f"  [DBG] press: {key!r} boost_held={self.boost_held}")
+            _out(f"  [DBG] press: {key!r} boost_held={self.boost_held}")
         if match_key(key, self.boost_key):
             self.boost_held = True
             if self.recording:
                 self.use_heavy = True
-                print(" +BOOST", end="", flush=True)
+                _out(" +BOOST", end="")
         if match_key(key, self.hotkey):
             self.start_recording()
 
@@ -248,31 +290,31 @@ class Scribe:
                 self.stop_recording()
             return
         if self.debug:
-            print(f"  [DBG] release: {key!r} boost_held={self.boost_held}")
+            _out(f"  [DBG] release: {key!r} boost_held={self.boost_held}")
         if match_key(key, self.boost_key):
             self.boost_held = False
         if match_key(key, self.hotkey):
             self.stop_recording()
 
     def run(self):
-        print(f"  Platform: {PLATFORM}")
+        _out(f"  Platform: {PLATFORM}")
         if PLATFORM == "Linux":
             session = os.environ.get("XDG_SESSION_TYPE", "x11")
-            print(f"  Display: {session}")
+            _out(f"  Display: {session}")
         backends = {
             "cuda": "GPU (PyTorch CUDA fp16)",
             "npu": "NPU (ONNX Runtime / QNN — Hexagon, CPU decoder)",
             "cpu": "CPU (CTranslate2 int8)",
         }
-        print("  Backend:", backends.get(self.device, backends["cpu"]))
+        _out("  Backend: " + backends.get(self.device, backends["cpu"]))
         self.load_model()
         self.worker.start()
 
         hotkey_name = key_name(self.hotkey)
         boost_name = key_name(self.boost_key)
-        print(f"\n  Hold [{hotkey_name}] to dictate (fast, {self.model_size})")
-        print(f"  Hold [{boost_name}] + [{hotkey_name}] to dictate (accurate, {HEAVY_MODEL})")
-        print(f"  Ctrl+C to quit.\n")
+        _out(f"\n  Hold [{hotkey_name}] to dictate (fast, {self.model_size})")
+        _out(f"  Hold [{boost_name}] + [{hotkey_name}] to dictate (accurate, {HEAVY_MODEL})")
+        _out("  Ctrl+C to quit.\n")
 
         listener = keyboard.Listener(
             on_press=self.on_press,
@@ -287,7 +329,7 @@ class Scribe:
         except KeyboardInterrupt:
             pass
         finally:
-            print("\n  Shutting down...")
+            _out("\n  Shutting down...")
             self.shutdown.set()
             self.work_event.set()
             listener.stop()

@@ -50,6 +50,10 @@ def setup_logging(advanced=ADVANCED):
     onto the console before.
     """
     global LOG_PATH
+    # Windowed builds (scribe-tray.exe, console=False) have no console: stdout
+    # and stderr are None, so any print()/traceback would raise. Redirect them
+    # to a sink — everything of value is in the log file anyway.
+    _guard_std_streams()
     os.makedirs(log_dir(), exist_ok=True)
     LOG_PATH = os.path.join(log_dir(), "scribe.log")
     root = logging.getLogger()
@@ -79,6 +83,26 @@ def setup_logging(advanced=ADVANCED):
     sys.excepthook = _hook
     threading.excepthook = lambda a: _hook(a.exc_type, a.exc_value, a.exc_traceback)
     return LOG_PATH
+
+
+class _NullStream:
+    """Minimal write-only stream for windowed builds with no console."""
+
+    def write(self, *_a, **_k):
+        return 0
+
+    def flush(self):
+        pass
+
+    def isatty(self):
+        return False
+
+
+def _guard_std_streams():
+    if sys.stdout is None:
+        sys.stdout = _NullStream()
+    if sys.stderr is None:
+        sys.stderr = _NullStream()
 
 
 def friendly_error(msg):
