@@ -16,7 +16,7 @@ from .backends import Transcriber, make_transcriber
 from .hotkeys import key_name, match_key
 from .inject import get_typer
 from .logsetup import friendly_error
-from . import postproc, vad
+from . import postproc
 
 log = logging.getLogger(__name__)
 
@@ -215,21 +215,12 @@ class Scribe:
         log.info("transcribe start: %.1fs audio heavy=%s [%s]",
                  len(audio) / SAMPLE_RATE, use_heavy, tr.backend_label)
 
-        # On the ONNX path, VAD only *trims* leading/trailing padding (Whisper
-        # hallucinates on padding-heavy clips). It must never *drop* the clip:
-        # gating on VAD was eating real speech on quieter mics. If the trim
-        # comes back empty, transcribe the original and let Whisper decide —
-        # true silence returns a [BLANK_AUDIO] annotation that postproc strips.
-        # The ct2 path keeps faster-whisper's own built-in VAD.
-        if self.device == "npu":
-            trimmed = vad.trim_silence(audio)
-            if trimmed.size:
-                log.info("VAD trimmed %.1fs -> %.1fs",
-                         len(audio) / SAMPLE_RATE, len(trimmed) / SAMPLE_RATE)
-                audio = trimmed
-            else:
-                log.info("VAD found no clear speech; transcribing untrimmed")
-
+        # No VAD trimming on the ONNX path: Whisper pads every clip to 30 s
+        # internally, so trimming saved almost nothing while risking clipped
+        # words on quiet starts/ends — and gating on VAD dropped real speech
+        # outright. Transcribe the whole clip; true silence comes back as a
+        # [BLANK_AUDIO] annotation that postproc strips to "". (The ct2 path
+        # keeps faster-whisper's own built-in VAD.)
         try:
             text = tr.transcribe(audio)
         except Exception:
