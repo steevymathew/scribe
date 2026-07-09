@@ -27,6 +27,24 @@ try:
 except ImportError:
     pass
 
+# ---- QML UI (Qt Quick Controls, Material Dark) ----
+# 1) our .qml files are loaded at runtime by path, so ship them as data.
+datas += [(os.path.join(src, "scribe", "ui", "qml"), "scribe/ui/qml")]
+# 2) PyInstaller's Qt hook bundles only Basic/FluentWinUI3 styles — the
+#    Material style module must be collected explicitly (verified via spike),
+#    along with the Effects module (MultiEffect shadows).
+try:
+    import PySide6
+    _qml = os.path.join(os.path.dirname(PySide6.__file__), "qml")
+    for _mod in ("QtQuick/Controls/Material", "QtQuick/Effects"):
+        _srcdir = os.path.join(_qml, *_mod.split("/"))
+        if os.path.isdir(_srcdir):
+            datas += [(_srcdir, "PySide6/qml/" + _mod)]
+    hiddenimports += ["PySide6.QtQml", "PySide6.QtQuick",
+                      "PySide6.QtQuickControls2", "PySide6.QtQuickWidgets"]
+except ImportError:
+    pass
+
 a = Analysis(
     [os.path.join(SPECPATH, "launcher.py")],
     pathex=[src],

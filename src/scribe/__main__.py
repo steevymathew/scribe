@@ -146,8 +146,8 @@ def main():
     if args.ui:
         # Lazy import: headless machines (CLI, systemd) never touch Qt, and
         # nothing outside scribe.ui may import PySide6 (ROADMAP §8).
-        from .ui.app import run_ui
-        raise SystemExit(run_ui(scribe, settings))
+        from .ui.qml_app import run_qml_ui
+        raise SystemExit(run_qml_ui(scribe, settings))
 
     scribe.run()
 
