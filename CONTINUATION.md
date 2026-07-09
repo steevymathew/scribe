@@ -6,15 +6,11 @@ limit). Pairs with [ROADMAP.md](ROADMAP.md) (the vision/plan) and
 
 ---
 
-> ⚠️ **Uncommitted work in progress (2026-07-09):** the "UI polish round" below
-> (overlay pill, mic-lifecycle fix, gear icon, sidebar collapse, compact
-> titlebar, heavy-model setting, developer section, logo wiring, live input
-> bars) is **written but not yet committed or rebuilt** — a transient platform
-> outage blocked the final verify/build/install. The installed app is still the
-> previous QML v1 (without these fixes). **Next session: re-run the QML load
-> test + `unittest` + settings func test, then rebuild/reinstall and commit.**
-> Last known-good QML load was *before* the `Overlay.qml` `import QtQuick.Controls`
-> fix — re-verify that first.
+> ✅ **UI polish round shipped (2026-07-09):** overlay pill, mic-lifecycle fix,
+> gear icon, sidebar collapse, compact titlebar, configurable heavy model,
+> developer section, logo, live input bars — all committed, built, installed,
+> and pushed to `v1-polish`. Logo `scribe.png` is in `ui/assets/`. Remaining
+> work is the **PENDING** list below (top: QML first-run wizard).
 
 ## TL;DR — where things stand (2026-07-09)
 
