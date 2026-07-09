@@ -102,6 +102,9 @@ class AppBridge(QObject):
                 self.recentChanged.emit()
                 self.transcriptAdded.emit(text, float(payload.get("elapsed", 0)),
                                           payload.get("backend", ""))
+        elif name == "level":
+            self.set_level(min(1.0, float(payload.get("rms", 0)) * 6))
+            return False  # amplitude only, not a status change
         elif name == "error":
             self._status, self._status_detail = "error", payload.get("message", "Something went wrong")
         else:
@@ -121,6 +124,14 @@ class AppBridge(QObject):
     @Property(str, constant=True)
     def modelName(self):
         return self._settings.get("model", "small.en")
+
+    @Property(str, constant=True)
+    def heavyModelName(self):
+        return self._settings.get("heavy_model", "large-v3-turbo")
+
+    @Property(str, constant=True)
+    def boostKeyName(self):
+        return self._settings.get("boost_key", "rshift")
 
     @Property(str, constant=True)
     def deviceName(self):

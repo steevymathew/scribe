@@ -43,8 +43,9 @@ def _out(msg, end="\n"):
 class Scribe:
     def __init__(self, model_size, hotkey, boost_key, device, beam_size=1,
                  npu_encoder=None, debug=False, postproc_settings=None,
-                 event_sink=None):
+                 event_sink=None, heavy_model=HEAVY_MODEL):
         self.model_size = model_size
+        self.heavy_model = heavy_model
         self.hotkey = hotkey
         self.boost_key = boost_key
         self.device = device
@@ -104,7 +105,7 @@ class Scribe:
     def _ensure_heavy_transcriber(self):
         if self.heavy_transcriber is None:
             print("  First use of heavy model — loading (one-time)...")
-            self._emit("model_loading", model=HEAVY_MODEL)
+            self._emit("model_loading", model=self.heavy_model)
             # The heavy model has its own encoder; a custom --npu-encoder only
             # applies to the primary model, so don't pass it here. On the ONNX
             # backend use the int8 build — large-v3-turbo in fp32 is a ~3 GB
@@ -113,9 +114,9 @@ class Scribe:
             # leave a broken half-initialized transcriber behind.
             tr = make_transcriber(self.device, self.beam_size, precision="_int8",
                                   language=self.language, dictionary=self.dictionary)
-            tr.load(HEAVY_MODEL)
+            tr.load(self.heavy_model)
             self.heavy_transcriber = tr
-            self._emit("model_loaded", model=HEAVY_MODEL, backend=tr.backend_label)
+            self._emit("model_loaded", model=self.heavy_model, backend=tr.backend_label)
         return self.heavy_transcriber
 
     def _audio_callback(self, indata, frames, time_info, status):
@@ -123,6 +124,12 @@ class Scribe:
             log.warning("audio stream status: %s", status)
         if self.recording:
             self.audio_chunks.append(indata.copy())
+            # Feed the UI a live input level (~16/s) so the orb/overlay react to
+            # the real voice. Only ever emitted while actually recording, so the
+            # mic is never held open outside push-to-talk.
+            if self.event_sink is not None:
+                rms = float(np.sqrt(np.mean(np.square(indata))))
+                self._emit("level", rms=rms)
 
     def start_recording(self):
         with self.lock:
@@ -297,7 +304,7 @@ class Scribe:
         hotkey_name = key_name(self.hotkey)
         boost_name = key_name(self.boost_key)
         _out(f"\n  Hold [{hotkey_name}] to dictate (fast, {self.model_size})")
-        _out(f"  Hold [{boost_name}] + [{hotkey_name}] to dictate (accurate, {HEAVY_MODEL})")
+        _out(f"  Hold [{boost_name}] + [{hotkey_name}] to dictate (accurate, {self.heavy_model})")
         _out("  Ctrl+C to quit.\n")
 
         listener = keyboard.Listener(

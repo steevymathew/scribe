@@ -28,8 +28,11 @@ except ImportError:
     pass
 
 # ---- QML UI (Qt Quick Controls, Material Dark) ----
-# 1) our .qml files are loaded at runtime by path, so ship them as data.
+# 1) our .qml files + logo assets are loaded at runtime by path — ship as data.
 datas += [(os.path.join(src, "scribe", "ui", "qml"), "scribe/ui/qml")]
+_assets = os.path.join(src, "scribe", "ui", "assets")
+if os.path.isdir(_assets):
+    datas += [(_assets, "scribe/ui/assets")]
 # 2) PyInstaller's Qt hook bundles only Basic/FluentWinUI3 styles — the
 #    Material style module must be collected explicitly (verified via spike),
 #    along with the Effects module (MultiEffect shadows).

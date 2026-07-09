@@ -127,6 +127,7 @@ def main():
 
     scribe = Scribe(
         model_size=settings["model"],
+        heavy_model=settings["heavy_model"],
         hotkey=hotkey,
         boost_key=boost_key,
         device=device,

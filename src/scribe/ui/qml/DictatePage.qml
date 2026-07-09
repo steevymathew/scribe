@@ -87,6 +87,24 @@ Flickable {
                               : app.statusDetail
                         color: Theme.muted; font.pixelSize: 14; wrapMode: Text.WordWrap
                     }
+                    // live input while recording
+                    Row {
+                        Layout.topMargin: 8
+                        visible: app.status === "recording"
+                        spacing: 3
+                        Repeater {
+                            model: 26
+                            Rectangle {
+                                width: 4; radius: 2
+                                anchors.verticalCenter: parent.verticalCenter
+                                property real k: 0.35 + 0.65*Math.abs(Math.sin(index*0.7))
+                                height: Math.max(4, 34 * k * (0.2 + app.level))
+                                color: Theme.accent
+                                Behavior on height { NumberAnimation { duration: 70 } }
+                            }
+                        }
+                    }
+
                     Flow {
                         Layout.fillWidth: true
                         Layout.topMargin: 10

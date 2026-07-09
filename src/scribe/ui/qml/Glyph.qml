@@ -25,14 +25,27 @@ Canvas {
             ctx.beginPath(); ctx.arc(w*0.5, h*0.5, w*0.28, 0.15*Math.PI, 0.85*Math.PI); ctx.stroke()
             ctx.beginPath(); ctx.moveTo(w*0.5, h*0.78); ctx.lineTo(w*0.5, h*0.9); ctx.stroke()
         } else if (name === "gear") {
-            ctx.beginPath(); ctx.arc(w*0.5, h*0.5, w*0.16, 0, 2*Math.PI); ctx.stroke()
+            var cx = w*0.5, cy = h*0.5, Rb = w*0.22
+            ctx.beginPath(); ctx.arc(cx, cy, Rb, 0, 2*Math.PI); ctx.stroke()          // ring
+            ctx.beginPath(); ctx.arc(cx, cy, w*0.075, 0, 2*Math.PI); ctx.stroke()     // hub
+            var save = ctx.lineWidth; ctx.lineWidth = g.thickness*1.7
             for (var i = 0; i < 8; i++) {
                 var a = i * Math.PI/4
                 ctx.beginPath()
-                ctx.moveTo(w*0.5 + Math.cos(a)*w*0.28, h*0.5 + Math.sin(a)*h*0.28)
-                ctx.lineTo(w*0.5 + Math.cos(a)*w*0.38, h*0.5 + Math.sin(a)*h*0.38)
+                ctx.moveTo(cx + Math.cos(a)*Rb,          cy + Math.sin(a)*Rb)
+                ctx.lineTo(cx + Math.cos(a)*(Rb+w*0.10), cy + Math.sin(a)*(Rb+w*0.10))
                 ctx.stroke()
             }
+            ctx.lineWidth = save
+        } else if (name === "chevronL" || name === "chevronR") {
+            var d = name === "chevronL" ? -1 : 1
+            ctx.beginPath()
+            ctx.moveTo(w*0.5 - d*w*0.12, h*0.28)
+            ctx.lineTo(w*0.5 + d*w*0.12, h*0.5)
+            ctx.lineTo(w*0.5 - d*w*0.12, h*0.72)
+            ctx.stroke()
+        } else if (name === "check") {
+            ctx.beginPath(); ctx.moveTo(w*0.24, h*0.52); ctx.lineTo(w*0.43, h*0.7); ctx.lineTo(w*0.76, h*0.3); ctx.stroke()
         } else if (name === "lock") {
             ctx.beginPath(); ctx.roundedRect(w*0.24, h*0.44, w*0.52, h*0.38, 3, 3); ctx.stroke()
             ctx.beginPath(); ctx.arc(w*0.5, h*0.44, w*0.17, Math.PI, 2*Math.PI); ctx.stroke()

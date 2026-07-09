@@ -8,7 +8,7 @@ ApplicationWindow {
     id: root
     visible: true
     width: 900; height: 620
-    minimumWidth: 330; minimumHeight: 360
+    minimumWidth: 300; minimumHeight: 360
     title: "Scribe"
     color: Theme.bg
 
@@ -18,16 +18,19 @@ ApplicationWindow {
     Material.foreground: Theme.text
     Material.primary: Theme.accent
 
-    // compact when narrow (calendar-flyout size): rail collapses to icons
-    readonly property bool compact: width < 560
+    property bool manualCollapse: false
+    // rail collapses either when the user toggles it or when very narrow
+    readonly property bool compact: manualCollapse || width < 480
     property int page: 0
     readonly property var navs: [
         { key: "mic",  label: "Dictate" },
         { key: "gear", label: "Settings" }
     ]
 
-    // closing the window hides to tray instead of quitting
-    onClosing: (c) => { c.accepted = false; root.hide() }
+    onClosing: (c) => { c.accepted = false; root.hide() }   // minimize to tray
+
+    // floating status pill (its own top-level window; shows even when hidden)
+    Overlay { id: statusPill }
 
     RowLayout {
         anchors.fill: parent
@@ -38,8 +41,7 @@ ApplicationWindow {
             Layout.fillHeight: true
             Layout.preferredWidth: root.compact ? 66 : 224
             color: Theme.s0
-            Behavior on Layout.preferredWidth { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
-
+            Behavior on Layout.preferredWidth { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
             Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: Theme.stroke }
 
             ColumnLayout {
@@ -47,20 +49,20 @@ ApplicationWindow {
                 anchors.margins: 14
                 spacing: 6
 
-                // brand
+                // brand + collapse toggle
                 RowLayout {
                     Layout.fillWidth: true; Layout.bottomMargin: 12; spacing: 11
-                    Rectangle {
-                        width: 34; height: 34; radius: 10
-                        gradient: Gradient {
-                            GradientStop { position: 0; color: Theme.accent }
-                            GradientStop { position: 1; color: Theme.accent2 } }
-                        Glyph { anchors.centerIn: parent; name: "mic"; width: 18; height: 18; color: "#04201D"; thickness: 2 }
-                    }
+                    Brand { size: 34 }
                     ColumnLayout {
-                        visible: !root.compact; spacing: 0
+                        visible: !root.compact; spacing: 0; Layout.fillWidth: true
                         Label { text: "Scribe"; color: Theme.text; font.pixelSize: 17; font.weight: Font.DemiBold }
                         Label { text: "Offline dictation"; color: Theme.faint; font.pixelSize: 11 }
+                    }
+                    IconButton {
+                        glyph: root.compact ? "chevronR" : "chevronL"
+                        tip: root.compact ? "Expand" : "Collapse"
+                        visible: !root.compact || root.width >= 480
+                        onClicked: root.manualCollapse = !root.manualCollapse
                     }
                 }
 
@@ -83,7 +85,6 @@ ApplicationWindow {
                             anchors.fill: parent
                             anchors.leftMargin: root.compact ? 0 : 12
                             spacing: 12
-                            Layout.alignment: Qt.AlignVCenter
                             Item { visible: root.compact; Layout.fillWidth: true }
                             Glyph {
                                 name: modelData.key; width: 19; height: 19
@@ -105,28 +106,6 @@ ApplicationWindow {
                 }
 
                 Item { Layout.fillHeight: true }
-
-                // privacy footer
-                Rectangle {
-                    Layout.fillWidth: true
-                    implicitHeight: 44
-                    radius: 11; color: Theme.s1; border.color: Theme.stroke; border.width: 1
-                    RowLayout {
-                        anchors.fill: parent; anchors.margins: 11; spacing: 10
-                        Layout.alignment: Qt.AlignVCenter
-                        Item { visible: root.compact; Layout.fillWidth: true }
-                        Glyph { name: "lock"; width: 16; height: 16; color: Theme.good }
-                        ColumnLayout {
-                            visible: !root.compact; spacing: 0
-                            Label { text: "On-device"; color: Theme.text; font.pixelSize: 12; font.weight: Font.Medium }
-                            Label { text: "Nothing leaves this PC"; color: Theme.muted; font.pixelSize: 11 }
-                        }
-                        Item { visible: root.compact; Layout.fillWidth: true }
-                    }
-                    ToolTip.visible: root.compact && fh.hovered
-                    ToolTip.text: "On-device — nothing leaves this PC"
-                    HoverHandler { id: fh }
-                }
             }
         }
 
@@ -135,10 +114,11 @@ ApplicationWindow {
             Layout.fillWidth: true; Layout.fillHeight: true
             spacing: 0
 
-            // title bar
+            // title bar — hidden in compact form for a cleaner flyout look
             Rectangle {
                 Layout.fillWidth: true
                 implicitHeight: 54
+                visible: !root.compact
                 color: "transparent"
                 Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.stroke }
                 RowLayout {
@@ -150,7 +130,6 @@ ApplicationWindow {
                         color: Theme.text; font.pixelSize: 16; font.weight: Font.DemiBold
                     }
                     Item { Layout.fillWidth: true }
-                    // status chip
                     Rectangle {
                         implicitHeight: 30; implicitWidth: chipRow.implicitWidth + 22
                         radius: 999; color: Theme.s1; border.color: Theme.stroke; border.width: 1
@@ -169,7 +148,6 @@ ApplicationWindow {
                             Label { text: app.statusDetail; color: Theme.muted; font.pixelSize: 12 }
                         }
                     }
-                    // minimize to tray
                     ToolButton {
                         text: "–"; font.pixelSize: 18
                         Material.foreground: Theme.muted
@@ -179,12 +157,11 @@ ApplicationWindow {
                 }
             }
 
-            // pages
             StackLayout {
                 Layout.fillWidth: true; Layout.fillHeight: true
                 currentIndex: root.page
                 DictatePage {}
-                SettingsPage {}
+                SettingsPage { active: root.page === 1 }
             }
         }
     }

@@ -15,6 +15,7 @@ log = logging.getLogger(__name__)
 
 DEFAULTS = {
     "model": "small.en",
+    "heavy_model": "large-v3-turbo",   # boost mode (hold the high-accuracy key)
     "hotkey": "ralt",
     "boost_key": "rshift",
     "device": "auto",

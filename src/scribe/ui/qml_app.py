@@ -27,8 +27,23 @@ _STATUS_COLORS = {
 }
 
 
+def _logo_path():
+    p = os.path.join(os.path.dirname(__file__), "assets", "scribe.png")
+    return p if os.path.exists(p) else None
+
+
+def _app_icon():
+    """The Scribe logo as a QIcon, or None if the asset hasn't been added yet."""
+    p = _logo_path()
+    return QIcon(p) if p else None
+
+
 def _tray_icon(color="#34E4CE"):
-    """A simple round dot icon so we ship no binary assets."""
+    """Tray icon: the logo when present, else a status-coloured dot (so status
+    stays visible in the tray until the logo asset is dropped in)."""
+    logo = _app_icon()
+    if logo is not None:
+        return logo
     pm = QPixmap(32, 32)
     pm.fill(QColor(0, 0, 0, 0))
     p = QPainter(pm)
@@ -52,6 +67,9 @@ def run_qml_ui(scribe, settings):
 
     app = QApplication.instance() or QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # closing the window hides to tray
+    _icon = _app_icon()
+    if _icon is not None:
+        app.setWindowIcon(_icon)
 
     lock = _acquire_lock()
     if lock is None:
