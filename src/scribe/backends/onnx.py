@@ -184,6 +184,11 @@ class ONNXTranscriber(Transcriber):
         print(f"  Loaded '{model_name}' ONNX — encoder on {where}, decoder on CPU "
               f"(KV cache) in {time.monotonic() - t0:.1f}s")
 
+    # Whisper encodes a fixed 30 s window and the feature extractor silently
+    # truncates anything longer — so a clip over 30 s must be split or its tail
+    # is lost. Chunk near a quiet point so we rarely cut mid-word.
+    CHUNK_SAMPLES = 30 * SAMPLE_RATE
+
     def transcribe(self, audio):
         # No silence gate here: gating on VAD dropped real speech on quieter
         # mics (it judged the clip "silence" and returned nothing). Let Whisper
@@ -192,7 +197,42 @@ class ONNXTranscriber(Transcriber):
         # the only thing worth short-circuiting.
         if audio is None or len(audio) == 0:
             return ""
+        if len(audio) <= self.CHUNK_SAMPLES:
+            return strip_annotations(self._transcribe_window(audio))
 
+        # Long clip: walk it in <=30 s windows, cutting each at the quietest
+        # point in its final seconds so word boundaries survive.
+        parts = []
+        start = 0
+        while start < len(audio):
+            end = min(start + self.CHUNK_SAMPLES, len(audio))
+            if end < len(audio):
+                end = self._quiet_cut(audio, start, end)
+            seg = audio[start:end]
+            if len(seg) >= int(0.2 * SAMPLE_RATE):
+                text = strip_annotations(self._transcribe_window(seg))
+                if text:
+                    parts.append(text)
+            start = end
+        return " ".join(parts)
+
+    @staticmethod
+    def _quiet_cut(audio, start, end):
+        """Return a cut point near `end` at the quietest 100 ms in the last ~2 s
+        of [start, end], so 30 s chunk boundaries rarely land mid-word."""
+        search = min(2 * SAMPLE_RATE, end - start)
+        region = np.abs(audio[end - search:end])
+        w = int(0.1 * SAMPLE_RATE)
+        if len(region) <= w:
+            return end
+        cs = np.cumsum(region)
+        energy = cs[w:] - cs[:-w]              # rolling 100 ms energy
+        idx = int(np.argmin(energy)) + w // 2  # centre of the quietest window
+        cut = (end - search) + idx
+        return max(start + int(0.5 * SAMPLE_RATE), cut)  # always make progress
+
+    def _transcribe_window(self, audio):
+        """Transcribe a single Whisper window (<=30 s). Returns raw text."""
         feats = self._processor.feature_extractor(
             audio, sampling_rate=SAMPLE_RATE, return_tensors="np"
         ).input_features.astype(self._enc_dtype)
@@ -232,8 +272,7 @@ class ONNXTranscriber(Transcriber):
                 dec_past[f"past_key_values.{i}.decoder.key"] = named[f"present.{i}.decoder.key"]
                 dec_past[f"past_key_values.{i}.decoder.value"] = named[f"present.{i}.decoder.value"]
 
-        text = self._processor.tokenizer.decode(generated, skip_special_tokens=True)
-        return strip_annotations(text)
+        return self._processor.tokenizer.decode(generated, skip_special_tokens=True)
 
     @property
     def backend_label(self):
