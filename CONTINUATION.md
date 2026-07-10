@@ -178,9 +178,13 @@ powershell -NoProfile -Command "Get-Process | Where-Object {\$_.Name -like '*scr
    indeterminate bar + status text driven by `app.status`), and an optional
    "download the high-accuracy model now" step (currently deferred to first
    boost use).
-3. **History + Dictionary pages** (deferred by owner). History OFF by default
-   (privacy); dictionary backend already exists (`postproc` + `config
-   dictionary`), just needs a page.
+3. **History + Dictionary — DONE (2026-07-09).** Both are sections in
+   `SettingsPage.qml`. Dictionary: view/add/remove `{spoken→replacement}` pairs
+   (`bridge.setDictionary`, live-applies via postproc). History: opt-in, OFF by
+   default (`config history_enabled`), persisted by new pure-Python
+   `scribe/history.py` (`history.json` in config dir, capped 500);
+   `bridge.historyEnabled`/`history`/`clearHistory()`. Tests in
+   `tests/test_history.py` (suite 61 green).
 4. **x64 build DONE (2026-07-09); Linux pending; code-signing pending.**
    - **win-x64** builds on THIS Snapdragon box using the emulated x64 `.venv`
      (AMD64 CPython + `PySide6`+`pyinstaller`) — PyInstaller emits x64 binaries
@@ -194,11 +198,23 @@ powershell -NoProfile -Command "Get-Process | Where-Object {\$_.Name -like '*scr
      unverified there. **See BUILDING.md → Linux "Status for future Linux
      workers"** for the exact checklist (tray/overlay/wizard on X11+Wayland,
      hotkey capture on Wayland, AppImage packaging).
-   - **Code-signing** still open (kills the SmartScreen warning).
-5. **Phase 6 NPU**: owner to create a Qualcomm AI Hub token; then run
-   `tools/build_npu_encoder.py`, commit the encoder via Git LFS, so Snapdragon
-   installs get true Hexagon offload. Today the encoder runs on native-ARM64
-   CPU (fast, but the "NPU" is not actually engaged — see backends/onnx.py).
+   - **Code-signing pipeline DONE (2026-07-09), pending a cert.** `tools/sign.ps1`
+     + `tools/make_dev_cert.ps1`, optional `/DSignScribe` in `installer.iss`,
+     documented in BUILDING.md. Verified with a self-signed cert. SmartScreen
+     only clears once the owner buys an **OV or EV** Authenticode cert (EV clears
+     it immediately; OV builds reputation over days/weeks). This is a purchase,
+     not code.
+5. **Phase 6 NPU — DEPRIORITIZED by owner (2026-07-09).** Likely won't ship: the
+   native-ARM64-CPU ONNX path is already fast, and true Hexagon offload needs a
+   Qualcomm AI Hub token for marginal gain. Parked, not dropped —
+   `tools/build_npu_encoder.py` is ready if ever revisited.
+6. **Streaming transcription (candidate, owner interested).** Show/inject words
+   while still speaking, for long dictations. Recommended approach: chunked
+   Whisper with **local-agreement** (Whisper-Streaming/LocalAgreement-2), opt-in
+   (`--stream`), keeping utterance mode as default. Phase A = live-caption in the
+   overlay, inject full text on release (safe, all backends, start on
+   GPU/x64-CPU-small.en). Phase B = forward-only injection of confirmed tokens.
+   Fully offline; no NPU/cloud. See the feasibility notes in chat 2026-07-09.
 
 ---
 

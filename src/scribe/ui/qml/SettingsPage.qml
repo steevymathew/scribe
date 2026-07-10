@@ -28,6 +28,25 @@ Flickable {
     function keyLabel(name) { var i = keyIndex(name); return keyLabels[i] }
     function modelIndex(name) { var i = models.indexOf(name); return i < 0 ? 2 : i }
 
+    // ---- custom dictionary helpers ----
+    // Rebinds whenever app.dictionary changes (its notify signal fires on edit).
+    readonly property var dictKeys: Object.keys(app.dictionary)
+
+    function addPair(spoken, replacement) {
+        var s = ("" + spoken).trim()
+        if (s === "") return
+        var m = {}, ks = Object.keys(app.dictionary)
+        for (var i = 0; i < ks.length; i++) m[ks[i]] = app.dictionary[ks[i]]
+        m[s] = ("" + replacement)
+        app.setDictionary(m)
+    }
+    function removePair(key) {
+        var m = {}, ks = Object.keys(app.dictionary)
+        for (var i = 0; i < ks.length; i++) if (ks[i] !== key) m[ks[i]] = app.dictionary[ks[i]]
+        app.setDictionary(m)
+    }
+    function copyToClipboard(t) { clip.text = t; clip.selectAll(); clip.copy() }
+
     ColumnLayout {
         id: col
         x: 22; y: 22; width: page.width - 44
@@ -114,6 +133,170 @@ Flickable {
         }
 
         SettingsGroup {
+            title: "DICTIONARY"
+            Item {
+                Layout.fillWidth: true
+                implicitHeight: dictCol.implicitHeight + 32
+                ColumnLayout {
+                    id: dictCol
+                    anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+                    anchors.leftMargin: 20; anchors.rightMargin: 20; anchors.topMargin: 16
+                    spacing: 12
+
+                    Label {
+                        text: "Fix how specific words are spelled/capitalised, e.g. “jira” → “Jira”."
+                        color: Theme.faint; font.pixelSize: 12
+                        Layout.fillWidth: true; wrapMode: Text.WordWrap
+                    }
+
+                    Label {
+                        visible: page.dictKeys.length === 0
+                        text: "No entries yet — add one below."
+                        color: Theme.faint; font.pixelSize: 13
+                    }
+
+                    // existing {spoken → replacement} pairs
+                    Repeater {
+                        model: page.dictKeys
+                        delegate: RowLayout {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Label {
+                                text: modelData; color: Theme.text; font.pixelSize: 13
+                                elide: Text.ElideRight
+                                Layout.preferredWidth: 150
+                            }
+                            Glyph { name: "chevronR"; width: 14; height: 14; color: Theme.faint }
+                            Label {
+                                text: app.dictionary[modelData]; color: Theme.muted; font.pixelSize: 13
+                                elide: Text.ElideRight; Layout.fillWidth: true
+                            }
+                            Button {
+                                text: "Remove"; flat: true; font.pixelSize: 12
+                                Material.foreground: Theme.faint
+                                onClicked: page.removePair(modelData)
+                            }
+                        }
+                    }
+
+                    Rectangle { Layout.fillWidth: true; height: 1; color: Theme.stroke
+                        visible: page.dictKeys.length > 0 }
+
+                    // add a new pair
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        TextField {
+                            id: spokenField
+                            placeholderText: "spoken"; font.pixelSize: 13
+                            Layout.preferredWidth: 150
+                            onAccepted: addBtn.clicked()
+                        }
+                        Glyph { name: "chevronR"; width: 14; height: 14; color: Theme.faint }
+                        TextField {
+                            id: replField
+                            placeholderText: "replacement"; font.pixelSize: 13
+                            Layout.fillWidth: true
+                            onAccepted: addBtn.clicked()
+                        }
+                        Button {
+                            id: addBtn
+                            text: "Add"; flat: true; Material.foreground: Theme.accent
+                            enabled: spokenField.text.trim() !== ""
+                            onClicked: {
+                                page.addPair(spokenField.text, replField.text)
+                                spokenField.text = ""; replField.text = ""
+                                spokenField.forceActiveFocus()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        SettingsGroup {
+            title: "HISTORY"
+            SettingRow {
+                label: "Save my dictations"
+                sub: "Off by default. When on, your dictations are saved on this device only."
+                Switch {
+                    checked: app.historyEnabled
+                    onToggled: app.setHistoryEnabled(checked)
+                }
+            }
+            Item {
+                Layout.fillWidth: true
+                visible: app.historyEnabled
+                implicitHeight: visible ? histCol.implicitHeight + 28 : 0
+                ColumnLayout {
+                    id: histCol
+                    anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+                    anchors.leftMargin: 20; anchors.rightMargin: 20; anchors.topMargin: 14
+                    spacing: 10
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Label {
+                            text: app.history.length + (app.history.length === 1 ? " saved dictation" : " saved dictations")
+                            color: Theme.muted; font.pixelSize: 12; Layout.fillWidth: true
+                        }
+                        Button {
+                            text: "Clear history"; flat: true; font.pixelSize: 12
+                            Material.foreground: Theme.rec
+                            enabled: app.history.length > 0
+                            onClicked: app.clearHistory()
+                        }
+                    }
+
+                    Label {
+                        visible: app.history.length === 0
+                        text: "Nothing saved yet — your dictations will appear here."
+                        color: Theme.faint; font.pixelSize: 13
+                    }
+
+                    // Its own scroll area so a long history stays contained and
+                    // virtualised rather than stretching the whole page.
+                    ListView {
+                        visible: app.history.length > 0
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: Math.min(contentHeight, 280)
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        spacing: 0
+                        ScrollBar.vertical: ScrollBar {}
+                        model: app.history
+                        delegate: Item {
+                            required property var modelData
+                            width: ListView.view.width
+                            implicitHeight: Math.max(46, hRow.implicitHeight + 16)
+                            Rectangle { width: parent.width; height: 1; color: Theme.stroke
+                                visible: index > 0 }
+                            RowLayout {
+                                id: hRow
+                                anchors.fill: parent
+                                anchors.leftMargin: 2; anchors.rightMargin: 2
+                                anchors.topMargin: 8; anchors.bottomMargin: 8
+                                spacing: 10
+                                Label {
+                                    text: modelData.text; color: Theme.text; font.pixelSize: 13
+                                    wrapMode: Text.WordWrap; Layout.fillWidth: true
+                                }
+                                Label {
+                                    text: modelData.seconds + "s"; color: Theme.faint; font.pixelSize: 12
+                                }
+                                IconButton {
+                                    glyph: "copy"; tip: "Copy"
+                                    onClicked: page.copyToClipboard(modelData.text)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        SettingsGroup {
             title: "SYSTEM"
             SettingRow {
                 label: "Start with Windows"; sub: "Launch to the tray when you sign in"
@@ -150,4 +333,7 @@ Flickable {
             color: Theme.faint; font.pixelSize: 11; Layout.leftMargin: 2; Layout.topMargin: 2
         }
     }
+
+    // hidden helper for clipboard copy (same pattern as DictatePage)
+    TextEdit { id: clip; visible: false }
 }

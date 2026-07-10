@@ -32,6 +32,29 @@ ArchitecturesAllowed=x64compatible
 SetupIconFile=..\src\scribe\ui\assets\scribe.ico
 UninstallDisplayIcon={app}\{#AppExe}
 
+; --- Optional code signing (off by default; unsigned build still compiles) ---
+; Two ways to sign, pick one (see BUILDING.md > Code signing):
+;
+;   A) RECOMMENDED / lower risk: leave this block OFF and sign the produced
+;      installer AFTER compiling, with the same pipeline used for the exes:
+;          tools\sign.ps1 dist\Scribe-Setup-x64.exe
+;      No Inno config, cannot break the build. (Trade-off: the embedded
+;      uninstaller is not separately signed - acceptable for most releases.)
+;
+;   B) Sign installer AND uninstaller at compile time via Inno's SignTool.
+;      Enable by passing /DSignScribe and defining the "scribe" signer that
+;      the block below references, e.g. (one line):
+;          iscc /DSignScribe ^
+;               "/Sscribe=powershell -NoProfile -ExecutionPolicy Bypass -File \"%CD%\tools\sign.ps1\" $f" ^
+;               packaging\installer.iss
+;      ($f is Inno's placeholder for the file being signed; sign.ps1 reads the
+;      cert from SCRIBE_CERT_PFX / SCRIBE_CERT_PASS. Without /DSignScribe the
+;      directives are skipped so no signer definition is required to compile.)
+#ifdef SignScribe
+SignTool=scribe
+SignedUninstaller=yes
+#endif
+
 [Tasks]
 Name: "autostart"; Description: "Start {#AppName} automatically when I sign in"; \
   GroupDescription: "Startup:"

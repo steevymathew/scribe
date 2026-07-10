@@ -20,7 +20,7 @@ from PySide6.QtCore import (
     Property, QObject, QTimer, Signal, Slot,
 )
 
-from .. import config, logsetup
+from .. import config, history, logsetup
 from ..hotkeys import HOTKEY_MAP, match_key
 
 log = logging.getLogger(__name__)
@@ -35,6 +35,9 @@ class AppBridge(QObject):
     pausedChanged = Signal()
     boostChanged = Signal()
     onboardingChanged = Signal()
+    dictionaryChanged = Signal()
+    historyChanged = Signal()
+    historyEnabledChanged = Signal()
 
     # one-shot event for transient UI (e.g. a toast)
     transcriptAdded = Signal(str, float, str)  # text, seconds, backend
@@ -54,6 +57,10 @@ class AppBridge(QObject):
         self._recent = []              # newest-first, session only (history off by default)
         self._paused = False
         self._boost = False            # high-accuracy (boost) key currently held
+        # Opt-in on-device history: load the saved store only when enabled, so
+        # a disabled app never even reads the file.
+        self._history = (history.load()
+                         if self._settings.get("history_enabled") else [])
 
         # Engine threads only enqueue; a timer drains on the Qt thread.
         self._events = queue.Queue()
@@ -99,13 +106,19 @@ class AppBridge(QObject):
             text = (payload.get("text") or "").strip()
             if text:
                 self._last = text
-                self._recent.insert(0, {
+                entry = {
                     "text": text,
                     "seconds": round(float(payload.get("elapsed", 0)), 1),
                     "backend": payload.get("backend", ""),
                     "heavy": bool(payload.get("heavy", False)),
-                })
+                }
+                self._recent.insert(0, entry)
                 del self._recent[24:]
+                # Persist to on-device history only when the user opted in.
+                if self._settings.get("history_enabled"):
+                    self._history = history.prepend(self._history, entry)
+                    history.save(self._history)
+                    self.historyChanged.emit()
                 self.lastTranscriptChanged.emit()
                 self.recentChanged.emit()
                 self.transcriptAdded.emit(text, float(payload.get("elapsed", 0)),
@@ -289,6 +302,65 @@ class AppBridge(QObject):
     @Slot(result="QVariant")
     def snapshotSettings(self):
         return dict(self._settings)
+
+    # ---- custom dictionary (Settings → Dictionary) ----
+
+    @Property("QVariantMap", notify=dictionaryChanged)
+    def dictionary(self):
+        return dict(self._settings.get("dictionary") or {})
+
+    @Slot("QVariant")
+    def setDictionary(self, mapping):
+        """Replace the whole {spoken: replacement} map, persist it, and live-
+        update the running engine so edits apply to the next transcription
+        without a restart (postproc reads self._scribe.dictionary per clip)."""
+        clean = {}
+        try:
+            items = mapping.items() if hasattr(mapping, "items") else dict(mapping).items()
+            for k, v in items:
+                k = str(k).strip()
+                if k:
+                    clean[k] = str(v)
+        except Exception:
+            log.exception("setDictionary got an unusable value: %r", mapping)
+            return
+        self._settings["dictionary"] = clean
+        # Live-update the engine: it reads these per transcription, so no restart.
+        try:
+            self._scribe.dictionary = clean
+            if isinstance(getattr(self._scribe, "postproc_settings", None), dict):
+                self._scribe.postproc_settings["dictionary"] = clean
+        except Exception:
+            log.debug("live dictionary update skipped", exc_info=True)
+        self._save()
+        self.dictionaryChanged.emit()
+
+    # ---- opt-in history (Settings → History) ----
+
+    @Property(bool, notify=historyEnabledChanged)
+    def historyEnabled(self):
+        return bool(self._settings.get("history_enabled"))
+
+    @Slot(bool)
+    def setHistoryEnabled(self, value):
+        value = bool(value)
+        self._settings["history_enabled"] = value
+        self._save()
+        # Turning it on surfaces anything previously saved on this device.
+        self._history = history.load() if value else []
+        self.historyEnabledChanged.emit()
+        self.historyChanged.emit()
+
+    @Property("QVariantList", notify=historyChanged)
+    def history(self):
+        return self._history
+
+    @Slot()
+    def clearHistory(self):
+        """Forget everything: delete the file and empty the in-memory list."""
+        history.clear()
+        self._history = []
+        self.historyChanged.emit()
 
     def _save(self):
         try:

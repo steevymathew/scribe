@@ -17,6 +17,7 @@ class EngineImportsNoQt(unittest.TestCase):
         import scribe.backends       # noqa: F401
         import scribe.config         # noqa: F401
         import scribe.engine         # noqa: F401
+        import scribe.history        # noqa: F401
         import scribe.hotkeys        # noqa: F401
         import scribe.hub            # noqa: F401
         import scribe.inject         # noqa: F401

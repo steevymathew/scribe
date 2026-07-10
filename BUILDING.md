@@ -80,8 +80,85 @@ first-run wizard downloads them once (~500 MB for small.en; the optional
 high-accuracy model is ~1 GB more).
 
 **Unsigned binaries:** Windows SmartScreen will warn on first run. Users click
-"More info → Run anyway". A code-signing certificate removes this; budget for
-one before wide distribution.
+"More info → Run anyway". A code-signing certificate removes this (see below);
+budget for one before wide distribution.
+
+### Code signing
+
+Signing is **optional and additive** — every build above works unsigned. When a
+certificate is configured the same pipeline Authenticode-signs the two app exes
+and the installers; when it isn't, signing is skipped and the build proceeds.
+
+**Getting a real certificate.** Buy an Authenticode code-signing cert from a
+public CA (DigiCert, Sectigo, SSL.com, etc.):
+
+- **OV (Organization Validation)** — cheaper, issued as a `.pfx` you hold. It
+  signs fine, but SmartScreen still distrusts a *new* signer until the signed
+  binaries accumulate download/run **reputation** (days to weeks of real-world
+  installs; there is no shortcut). Some CAs now issue OV on a hardware token /
+  cloud HSM ("attested"), which builds reputation faster.
+- **EV (Extended Validation)** — pricier, key lives on a FIPS hardware token or
+  cloud HSM. SmartScreen grants EV-signed binaries reputation **immediately**,
+  so first-run warnings clear from day one. Prefer EV if you distribute widely.
+
+Either way, an unknown/self-signed cert does **not** help — only a CA-issued
+OV/EV cert changes what SmartScreen shows.
+
+**Point the pipeline at your `.pfx`.** The signing script reads the cert path
+and password from environment variables (never hardcoded):
+
+```powershell
+$env:SCRIBE_CERT_PFX  = 'C:\secure\scribe-codesign.pfx'
+$env:SCRIBE_CERT_PASS = '<pfx password>'
+```
+
+(For an EV token, install the vendor's signing tool and point `SCRIBE_CERT_PFX`
+at the token per their docs; the token PIN replaces the password.)
+
+**Sign a release** — after PyInstaller and Inno Setup have produced the
+artifacts:
+
+```powershell
+# 1. the two app exes in the bundle
+tools\sign.ps1 dist\scribe\scribe.exe dist\scribe\scribe-tray.exe
+#    (or sign the whole bundle dir: tools\sign.ps1 dist\scribe)
+
+# 2. the installers, after building them
+tools\sign.ps1 dist\Scribe-Setup-x64.exe
+tools\sign.ps1 dist\Scribe-Setup-arm64.exe
+```
+
+Sign the exes **before** building the installer so the signed exes are the ones
+packaged, then sign the installer itself. `sign.ps1` verifies each file with
+`Get-AuthenticodeSignature` and fails loudly if a signature didn't land. With
+`SCRIBE_CERT_PFX` unset it prints a notice and exits 0, so unsigned CI/dev
+builds are unaffected.
+
+`packaging\installer.iss` also has an optional compile-time signing block
+(`/DSignScribe`) that additionally signs the embedded **uninstaller**; the
+post-build `sign.ps1` route above is the lower-risk default. See the comment in
+that file.
+
+**Why timestamping matters.** `sign.ps1` counter-signs every signature with a
+trusted timestamp (DigiCert's server by default). The timestamp records *when*
+the file was signed, so the signature stays **valid after the signing
+certificate expires** — without it, every signed binary would "expire" the day
+the cert does and start warning again. Never sign without a timestamp.
+
+**Testing the pipeline without a real cert.** Generate a throwaway self-signed
+cert to exercise signing + verification end to end:
+
+```powershell
+tools\make_dev_cert.ps1 -Password 'test1234'    # writes dist\scribe-dev-cert.pfx
+$env:SCRIBE_CERT_PFX  = "$PWD\dist\scribe-dev-cert.pfx"
+$env:SCRIBE_CERT_PASS = 'test1234'
+tools\sign.ps1 dist\scribe\scribe.exe
+```
+
+`Get-AuthenticodeSignature` will show the file **signed** but with an
+**untrusted** chain (status `UnknownError`/`NotTrusted`) — that is expected and
+correct for a self-signed cert. A self-signed cert proves the plumbing works;
+it does **not** remove SmartScreen warnings. Only a purchased OV/EV cert does.
 
 ## Linux (x64)
 

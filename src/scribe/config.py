@@ -26,6 +26,9 @@ DEFAULTS = {
     "remove_fillers": False,
     "language": "en",
     "dictionary": {},  # {spoken: replacement}, a [dictionary] table in TOML
+    # Opt-in transcript history, saved on this device only (see history.py).
+    # Off by default: nothing is written to disk unless the user turns it on.
+    "history_enabled": False,
     # Preferred input device name (Settings → Audio). None = system default.
     # Persisted for the UI; the engine currently records from the default mic.
     "input_device": None,

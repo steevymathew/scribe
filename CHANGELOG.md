@@ -5,6 +5,23 @@ A dated record of what changed and when. Newest first. Times are local
 
 ## Unreleased — `v1-polish` branch
 
+### 2026-07-09 (later still)
+
+- **Dictionary editor (Settings).** View/add/remove custom `{spoken → replacement}`
+  pairs (e.g. "jira" → "Jira"). Persists via config and live-updates the running
+  engine — fixes apply on the next dictation, no restart.
+- **On-device history (Settings), opt-in and OFF by default.** New pure-Python
+  `scribe/history.py` stores transcripts as `history.json` in the config dir
+  (newest-first, capped 500, every disk op best-effort). Settings gains a toggle,
+  a saved-transcript list with per-row copy, and a "Clear history" button.
+  Nothing is read or written unless you turn it on. +12 tests (suite now 61).
+- **Code-signing pipeline (optional, additive).** `tools/sign.ps1` Authenticode-
+  signs the exes/installers with a trusted timestamp (cert from
+  `SCRIBE_CERT_PFX`/`SCRIBE_CERT_PASS`; no-ops cleanly when unset).
+  `tools/make_dev_cert.ps1` makes a self-signed cert for testing the plumbing;
+  `installer.iss` has an optional `/DSignScribe` block; BUILDING.md documents it.
+  Note: SmartScreen only clears with a purchased OV/EV cert.
+
 ### 2026-07-09 (later)
 
 - **x64 build + portable packaging.** Produced the win-x64 build from the
