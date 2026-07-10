@@ -28,6 +28,8 @@ ArchitecturesAllowed=arm64
 #else
 ArchitecturesAllowed=x64compatible
 #endif
+; Branded icon for the installer/uninstaller UI (the exes carry it embedded too).
+SetupIconFile=..\src\scribe\ui\assets\scribe.ico
 UninstallDisplayIcon={app}\{#AppExe}
 
 [Tasks]

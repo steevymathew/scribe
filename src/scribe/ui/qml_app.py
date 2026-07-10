@@ -76,7 +76,10 @@ def run_qml_ui(scribe, settings):
         print("  Scribe is already running — check the system tray.")
         return 1
 
-    bridge = AppBridge(scribe, settings)
+    # First launch: no config file yet → show the onboarding wizard overlay.
+    from .. import config
+    first_run = not os.path.exists(config.config_path())
+    bridge = AppBridge(scribe, settings, first_run=first_run)
 
     engine = QQmlApplicationEngine()
     engine.rootContext().setContextProperty("app", bridge)
@@ -116,6 +119,21 @@ def run_qml_ui(scribe, settings):
             tray.setIcon(_tray_icon(_STATUS_COLORS.get(bridge.status, "#34E4CE")))
             tray.setToolTip(f"Scribe — {bridge.statusDetail}")
         bridge.statusChanged.connect(on_status)
+
+        # First time the window is closed to the tray, remind the user Scribe is
+        # still running (so closing the window doesn't feel like quitting).
+        hint_shown = {"v": False}
+
+        def on_closed_to_tray():
+            if hint_shown["v"]:
+                return
+            hint_shown["v"] = True
+            tray.showMessage(
+                "Scribe is still running",
+                "It's here in your tray. Hold your dictation key any time; "
+                "quit from the tray menu.",
+                _tray_icon(), 5000)
+        bridge.closedToTray.connect(on_closed_to_tray)
         tray.show()
     else:
         print("  No system tray available — the window stays open.")

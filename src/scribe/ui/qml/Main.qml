@@ -27,10 +27,15 @@ ApplicationWindow {
         { key: "gear", label: "Settings" }
     ]
 
-    onClosing: (c) => { c.accepted = false; root.hide() }   // minimize to tray
+    // Closing hides to the tray instead of quitting; tell Python so it can pop a
+    // one-time "still running in the tray" hint the first time it happens.
+    onClosing: (c) => { c.accepted = false; root.hide(); app.notifyClosedToTray() }
 
     // floating status pill (its own top-level window; shows even when hidden)
     Overlay { id: statusPill }
+
+    // first-run onboarding (covers everything while app.needsOnboarding)
+    Wizard { anchors.fill: parent }
 
     RowLayout {
         anchors.fill: parent
@@ -38,74 +43,78 @@ ApplicationWindow {
 
         // ---------- nav rail ----------
         Rectangle {
+            id: navRail
             Layout.fillHeight: true
             Layout.preferredWidth: root.compact ? 66 : 224
             color: Theme.s0
+            z: 2   // so the edge handle can straddle the divider above the content
             Behavior on Layout.preferredWidth { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
             Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: Theme.stroke }
+            HoverHandler { id: railHover }
 
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 14
                 spacing: 6
 
-                // brand + collapse toggle
+                // brand + wordmark (wordmark only when expanded; mark centered
+                // when compact). No collapse control here — it lives on the rail
+                // edge and only appears on hover (see railHandle below).
                 RowLayout {
-                    Layout.fillWidth: true; Layout.bottomMargin: 12; spacing: 11
-                    Brand { size: 34 }
+                    Layout.fillWidth: true
+                    Layout.bottomMargin: root.compact ? 8 : 14
+                    spacing: 11
+                    Item { visible: root.compact; Layout.fillWidth: true }
+                    Brand { size: root.compact ? 30 : 34 }
                     ColumnLayout {
                         visible: !root.compact; spacing: 0; Layout.fillWidth: true
                         Label { text: "Scribe"; color: Theme.text; font.pixelSize: 17; font.weight: Font.DemiBold }
                         Label { text: "Offline dictation"; color: Theme.faint; font.pixelSize: 11 }
                     }
-                    IconButton {
-                        glyph: root.compact ? "chevronR" : "chevronL"
-                        tip: root.compact ? "Expand" : "Collapse"
-                        visible: !root.compact || root.width >= 480
-                        onClicked: root.manualCollapse = !root.manualCollapse
-                    }
+                    Item { visible: root.compact; Layout.fillWidth: true }
                 }
 
-                // nav items
-                Repeater {
-                    model: root.navs
-                    delegate: Rectangle {
-                        required property int index
-                        required property var modelData
-                        Layout.fillWidth: true
-                        implicitHeight: 44
-                        radius: 11
-                        color: root.page === index ? Qt.rgba(0.20,0.89,0.81,0.12)
-                                                   : (nh.hovered ? Theme.s1 : "transparent")
-                        border.color: root.page === index ? Qt.rgba(0.20,0.89,0.81,0.22) : "transparent"
-                        border.width: 1
-                        Behavior on color { ColorAnimation { duration: 120 } }
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: root.compact ? 0 : 12
-                            spacing: 12
-                            Item { visible: root.compact; Layout.fillWidth: true }
-                            Glyph {
-                                name: modelData.key; width: 19; height: 19
-                                color: root.page === index ? Theme.accent : (nh.hovered ? Theme.text : Theme.muted)
-                            }
-                            Label {
-                                visible: !root.compact
-                                text: modelData.label; Layout.fillWidth: true
-                                color: root.page === index ? Theme.text : Theme.muted
-                                font.pixelSize: 14; font.weight: Font.Medium
-                            }
-                            Item { visible: root.compact; Layout.fillWidth: true }
-                        }
-                        HoverHandler { id: nh }
-                        TapHandler { onTapped: root.page = index }
-                        ToolTip.visible: root.compact && nh.hovered
-                        ToolTip.text: modelData.label
-                    }
+                // primary nav at the top
+                NavItem {
+                    glyph: "mic"; label: "Dictate"; compact: root.compact
+                    selected: root.page === 0; onActivated: root.page = 0
                 }
 
-                Item { Layout.fillHeight: true }
+                Item { Layout.fillHeight: true }   // pushes Settings to the bottom
+
+                // Settings pinned to the bottom of the rail
+                NavItem {
+                    glyph: "gear"; label: "Settings"; compact: root.compact
+                    selected: root.page === 1; onActivated: root.page = 1
+                }
+            }
+
+            // Collapse/expand handle: sits on the rail's right edge and only
+            // fades in when the rail (or the handle) is hovered — an unobtrusive
+            // hint rather than a permanent button. Hidden when the window is too
+            // narrow to bother expanding.
+            Rectangle {
+                id: railHandle
+                visible: root.width >= 480
+                anchors.verticalCenter: parent.verticalCenter
+                x: parent.width - width / 2
+                width: 20; height: 46; radius: 10
+                color: hh.hovered ? Theme.s2 : Theme.s1
+                border.color: Theme.stroke2; border.width: 1
+                opacity: (railHover.hovered || hh.hovered) ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: 160 } }
+                Behavior on color { ColorAnimation { duration: 120 } }
+                Glyph {
+                    anchors.centerIn: parent
+                    name: root.compact ? "chevronR" : "chevronL"
+                    width: 14; height: 14
+                    color: hh.hovered ? Theme.text : Theme.muted
+                }
+                HoverHandler { id: hh }
+                TapHandler { onTapped: root.manualCollapse = !root.manualCollapse }
+                ToolTip.visible: hh.hovered
+                ToolTip.text: root.compact ? "Expand" : "Collapse"
+                ToolTip.delay: 400
             }
         }
 

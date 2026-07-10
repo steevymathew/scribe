@@ -5,7 +5,7 @@ import logging
 import signal
 import sys
 
-from . import config
+from . import config, portable
 from .backends import autodetect_device
 from .engine import PLATFORM, Scribe
 from .hotkeys import HOTKEY_MAP
@@ -92,6 +92,10 @@ def build_parser():
 
 
 def main():
+    # Before anything reads a path or loads a model: if a portable marker sits
+    # next to the exe, redirect config/logs/model-cache beside it.
+    portable.apply()
+
     args = build_parser().parse_args()
 
     settings = config.effective({

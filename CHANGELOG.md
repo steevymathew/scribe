@@ -5,6 +5,64 @@ A dated record of what changed and when. Newest first. Times are local
 
 ## Unreleased — `v1-polish` branch
 
+### 2026-07-09 (later)
+
+- **x64 build + portable packaging.** Produced the win-x64 build from the
+  emulated x64 `.venv` on the Snapdragon dev box (documented in BUILDING.md).
+  Added **portable mode** (`src/scribe/portable.py`): a `portable.txt` marker
+  next to the exe redirects config, logs and the model cache into a
+  `ScribeData` folder beside the app (via `SCRIBE_CONFIG_DIR`/`SCRIBE_LOG_DIR`/
+  `HF_HOME`), so the shipped `Scribe-Portable-x64.zip` runs with no admin and
+  writes nothing to the user profile. New `tools/make_portable.py` builds the
+  ZIP. `logsetup.log_dir()` now honours `SCRIBE_LOG_DIR`.
+- **Tray hint on close.** Closing the window (which hides to the tray) now pops
+  a one-time tray notification — "Scribe is still running" — so it doesn't feel
+  like quitting. New bridge `closedToTray` signal + `notifyClosedToTray` slot;
+  `qml_app` shows the balloon once per session.
+- **Settings pinned to the bottom of the sidebar** (Dictate stays at the top),
+  via a reusable `NavItem.qml`.
+- **Collapse control moved to the rail edge.** Replaced the always-visible
+  chevron button(s) with a single handle straddling the nav-rail's right edge
+  that fades in only on hover — an unobtrusive hint instead of a permanent
+  control.
+
+### 2026-07-09
+
+- **First-run wizard (QML).** The QML UI previously skipped onboarding — a fresh
+  install got the window but no mic/hotkey/model setup. Added a themed
+  full-cover onboarding overlay (`ui/qml/Wizard.qml`) shown when no config file
+  exists: welcome/privacy → microphone pick + live level meter → push-to-talk
+  key capture (reuses the engine's key matching via a new bridge
+  `startKeyCapture`/`keyCaptured`) → speech-model download (observes the
+  engine's own `model_loading`/`model_loaded` so there's no second download) →
+  done. Finishing writes the config (so it never shows again); quitting
+  mid-wizard writes nothing and it reappears next launch. New bridge surface:
+  `needsOnboarding`, `inputDevices()`, `startKeyCapture`/`stopKeyCapture`,
+  `keyCaptured`, `finishOnboarding()`; `run_qml_ui` detects first run.
+- **Boost / high-accuracy indicator.** Holding the boost key now shows a live
+  "High accuracy" badge on the Dictate hero, an "HD" tag on the floating overlay
+  pill (visible even when hidden to the tray), and warm-tinted level bars; the
+  engine emits a `boost` event on key change and tags each transcript with
+  whether the heavy model ran, so recent items carry a "Boost" marker. Before
+  this there was no indication the heavier model was engaged.
+- **Fixed the "cards bounce" while speaking.** The live input bars animated
+  their own height inside a layout, so every amplitude frame resized the hero
+  card. The waveform now lives in a fixed-height strip (bars animate *inside*
+  it) and is always present (resting low when idle), so the card height is
+  constant whether idle, recording, or boosting.
+- **Fixed the nav-rail overlap in compact mode.** The collapse chevron shared a
+  row with the brand mark in the 66 px collapsed rail and overflowed onto the
+  content area (a stray `>` over the orb). The brand now centers alone and the
+  expand toggle sits in its own row below it.
+- **App/installer icon.** Generated a multi-size `scribe.ico` (16–256 px) from
+  the logo (`tools/make_icon.py`) and wired it into `scribe.spec` (exe icon) and
+  `installer.iss` (`SetupIconFile`), so Explorer/taskbar/Alt-Tab and the setup
+  wizard show the Scribe mark instead of the default PyInstaller icon.
+- **Logo asset normalized** to lowercase `scribe.png` (was `scribe.PNG`, which
+  would have broken the case-sensitive Linux build).
+- **GETTING-STARTED.md** — a non-technical install guide (supported systems →
+  which single executable, wizard walkthrough, "ignore the dev scripts" note).
+
 ### 2026-07-08
 
 - **23:40 — Long-audio fix: transcribe clips longer than 30 seconds.**

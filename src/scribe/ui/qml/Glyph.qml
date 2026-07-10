@@ -58,6 +58,16 @@ Canvas {
         } else if (name === "chip") {
             ctx.beginPath(); ctx.roundedRect(w*0.22, h*0.22, w*0.56, h*0.56, 3, 3); ctx.stroke()
             ctx.beginPath(); ctx.rect(w*0.4, h*0.4, w*0.2, h*0.2); ctx.stroke()
+        } else if (name === "bolt") {
+            ctx.beginPath()
+            ctx.moveTo(w*0.56, h*0.12)
+            ctx.lineTo(w*0.30, h*0.56)
+            ctx.lineTo(w*0.48, h*0.56)
+            ctx.lineTo(w*0.44, h*0.88)
+            ctx.lineTo(w*0.70, h*0.44)
+            ctx.lineTo(w*0.52, h*0.44)
+            ctx.closePath()
+            ctx.fill()
         } else if (name === "clock") {
             ctx.beginPath(); ctx.arc(w*0.5, h*0.5, w*0.32, 0, 2*Math.PI); ctx.stroke()
             ctx.beginPath(); ctx.moveTo(w*0.5, h*0.5); ctx.lineTo(w*0.5, h*0.3); ctx.moveTo(w*0.5, h*0.5); ctx.lineTo(w*0.64, h*0.56); ctx.stroke()

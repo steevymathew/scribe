@@ -22,6 +22,44 @@ python -m PyInstaller packaging\scribe.spec --noconfirm
 # → dist\scribe\ with scribe.exe (console CLI) and scribe-tray.exe (tray app)
 ```
 
+> **Building win-x64 on a Snapdragon (ARM64) dev box.** You don't need a
+> separate x64 machine. Windows-on-ARM runs x64 Python under emulation, so an
+> **x64 venv** (here `.venv`, an AMD64 CPython) with `PySide6 + pyinstaller`
+> installed produces a genuine x64 build — PyInstaller emits binaries matching
+> the interpreter's architecture. It's slower (emulated) but correct. The spec
+> auto-skips `onnxruntime_qnn` when absent, so the x64 bundle ships the
+> faster-whisper CPU backend. Smoke-test with `dist\scribe\scribe.exe
+> --save-config` (exits without loading a model) before packaging; full
+> transcription is best verified on a real x64 machine.
+
+### App icon
+
+The exe/installer icon (`src/scribe/ui/assets/scribe.ico`) is generated from the
+logo — regenerate it whenever the logo changes:
+
+```powershell
+python tools\make_icon.py    # needs Pillow (build-time only)
+```
+
+### Portable build (no installer, no admin)
+
+For a machine where you can't (or don't want to) run an installer, ship the
+bundle as a **portable ZIP**. After PyInstaller, and **after** building the
+installer (so the installer stays non-portable):
+
+```powershell
+python tools\make_portable.py x64      # or arm64
+# → dist\Scribe-Portable-x64.zip
+```
+
+This drops a `portable.txt` marker into the bundle and zips it under a top-level
+`Scribe\` folder. The marker switches the app into **portable mode**
+(`src/scribe/portable.py`): config, logs and the downloaded model cache all go
+into a `ScribeData\` folder next to `scribe-tray.exe` instead of the user
+profile — nothing is written to `%APPDATA%`/`%LOCALAPPDATA%`, no admin needed,
+and it runs from a USB stick. The user just unzips and double-clicks
+`scribe-tray.exe`.
+
 Smoke-test the bundle before packaging:
 
 ```powershell
@@ -46,6 +84,30 @@ high-accuracy model is ~1 GB more).
 one before wide distribution.
 
 ## Linux (x64)
+
+> **Status for future Linux workers (read this first).** The **engine already
+> runs on Linux from source today** — `./setup.sh` then `./scribe` (CPU) or
+> `./scribe-gpu` (NVIDIA CUDA), plus the `scribe.service` systemd unit. That
+> path (headless CLI + text injection via `xdotool`/`wtype`) is the original,
+> working Linux story and needs nothing new to *run*.
+>
+> What is **not yet verified on Linux** and is the actual remaining work:
+> 1. **The new QML GUI (`--ui`)** has only been exercised on Windows. PySide6 is
+>    cross-platform so it should come up on X11; the known rough spots are the
+>    **system tray** (needs a StatusNotifierItem host — fine on KDE/most GNOME
+>    with an extension) and the **frameless always-on-top overlay pill** and
+>    **first-run wizard** on **Wayland** (compositors restrict positioning and
+>    global input). Smoke-test `python scribe.py --ui` on both X11 and Wayland;
+>    if the overlay can't position on Wayland, degrade gracefully (tray-only).
+> 2. **Global hotkey capture** (`pynput`) on Wayland is compositor-dependent —
+>    verify Right-Alt push-to-talk actually fires; document any per-desktop
+>    caveats.
+> 3. **Portable mode** (`src/scribe/portable.py`) already targets Linux paths
+>    (`SCRIBE_CONFIG_DIR`/`SCRIBE_LOG_DIR`/`HF_HOME`); untested there.
+> 4. **AppImage packaging** below is unwritten beyond the recipe sketch.
+>
+> In short: to *use* Scribe on Linux, the from-source engine works now. To ship
+> the polished GUI, the list above is the checklist.
 
 AppImage is the primary format (single file, no install, works across
 distros). Recipe:

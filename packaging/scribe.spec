@@ -16,6 +16,12 @@ from PyInstaller.utils.hooks import collect_all
 repo = os.path.dirname(os.path.dirname(os.path.abspath(SPECPATH + "/x")))
 src = os.path.join(SPECPATH, "..", "src")
 
+# Windows exe icon (Explorer / taskbar / Alt-Tab). Multi-size .ico generated
+# from the logo by tools/make_icon.py; falls back to PyInstaller's default if
+# it hasn't been generated yet.
+_icon = os.path.join(src, "scribe", "ui", "assets", "scribe.ico")
+_icon = _icon if os.path.isfile(_icon) else None
+
 datas, binaries, hiddenimports = [], [], []
 
 # onnxruntime_qnn ships the QNN provider + Hexagon DLLs as plain package
@@ -85,6 +91,7 @@ exe = EXE(
     exclude_binaries=True,
     name="scribe",
     console=True,
+    icon=_icon,
     upx=False,
 )
 
@@ -95,6 +102,7 @@ exe_tray = EXE(
     exclude_binaries=True,
     name="scribe-tray",
     console=False,
+    icon=_icon,
     upx=False,
 )
 

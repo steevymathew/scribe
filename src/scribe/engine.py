@@ -243,7 +243,7 @@ class Scribe:
         if not text:
             _out(f" -> (silence, {elapsed:.1f}s) [{tr.backend_label}]")
             self._emit("injected", text="", elapsed=elapsed,
-                       backend=tr.backend_label)
+                       backend=tr.backend_label, heavy=use_heavy)
             return
 
         _out(f" -> \"{text}\" ({elapsed:.1f}s) [{tr.backend_label}]")
@@ -256,7 +256,24 @@ class Scribe:
             log.exception("text injection failed")
             friendly_error("Couldn't type the text — see the log")
         self._emit("injected", text=text, elapsed=elapsed,
-                   backend=tr.backend_label)
+                   backend=tr.backend_label, heavy=use_heavy)
+
+    def _set_boost(self, held):
+        """Track the boost (high-accuracy) key and notify the UI.
+
+        Emitting only on an actual state change keeps Windows key auto-repeat
+        from flooding the sink with duplicate events. When boost engages mid
+        recording we upgrade the in-flight clip to the heavy model, matching the
+        pre-existing behaviour; boost held before recording is honoured at
+        stop_recording() via `self.boost_held`.
+        """
+        if held == self.boost_held:
+            return
+        self.boost_held = held
+        if held and self.recording:
+            self.use_heavy = True
+            _out(" +BOOST", end="")
+        self._emit("boost", active=held)
 
     def on_press(self, key):
         if self.paused:
@@ -264,10 +281,7 @@ class Scribe:
         if self.debug:
             _out(f"  [DBG] press: {key!r} boost_held={self.boost_held}")
         if match_key(key, self.boost_key):
-            self.boost_held = True
-            if self.recording:
-                self.use_heavy = True
-                _out(" +BOOST", end="")
+            self._set_boost(True)
         if match_key(key, self.hotkey):
             self.start_recording()
 
@@ -276,14 +290,14 @@ class Scribe:
             # Still track key-ups so a hotkey held across "pause" can't wedge
             # a recording; stop_recording() is a no-op when idle.
             if match_key(key, self.boost_key):
-                self.boost_held = False
+                self._set_boost(False)
             if match_key(key, self.hotkey):
                 self.stop_recording()
             return
         if self.debug:
             _out(f"  [DBG] release: {key!r} boost_held={self.boost_held}")
         if match_key(key, self.boost_key):
-            self.boost_held = False
+            self._set_boost(False)
         if match_key(key, self.hotkey):
             self.stop_recording()
 

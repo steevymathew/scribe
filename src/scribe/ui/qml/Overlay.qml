@@ -70,6 +70,22 @@ Window {
                 color: Theme.text; font.pixelSize: 14; font.weight: Font.Medium
             }
 
+            // boost tag — high-accuracy model armed (visible even when the main
+            // window is hidden to the tray, which is the whole point of the pill)
+            Rectangle {
+                Layout.alignment: Qt.AlignVCenter
+                visible: app.boostActive && ov.phase !== "done"
+                implicitHeight: 20; implicitWidth: bRow.implicitWidth + 14
+                radius: 10
+                color: Qt.rgba(1.0, 0.76, 0.30, 0.18)
+                border.color: Qt.rgba(1.0, 0.76, 0.30, 0.5); border.width: 1
+                RowLayout {
+                    id: bRow; anchors.centerIn: parent; spacing: 4
+                    Glyph { name: "bolt"; width: 11; height: 11; color: Theme.warn }
+                    Label { text: "HD"; color: Theme.warn; font.pixelSize: 11; font.weight: Font.DemiBold }
+                }
+            }
+
             Item { Layout.fillWidth: true }
 
             // live level bars (real amplitude while recording)
@@ -85,8 +101,9 @@ Window {
                         height: ov.phase === "recording"
                                 ? Math.max(4, 22 * base * (0.25 + app.level))
                                 : (6 + (index % 2) * 6)
-                        color: Theme.accent
+                        color: app.boostActive ? Theme.warn : Theme.accent
                         Behavior on height { NumberAnimation { duration: 70 } }
+                        Behavior on color { ColorAnimation { duration: 160 } }
                         SequentialAnimation on opacity {
                             running: ov.phase === "transcribing"; loops: Animation.Infinite
                             NumberAnimation { to: 0.3; duration: 300 + index*60 }

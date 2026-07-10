@@ -34,6 +34,9 @@ LOG_PATH = None  # set by setup_logging()
 
 
 def log_dir():
+    override = os.environ.get("SCRIBE_LOG_DIR")
+    if override:
+        return override
     if platform.system() == "Windows":
         base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
         return os.path.join(base, "Scribe", "logs")

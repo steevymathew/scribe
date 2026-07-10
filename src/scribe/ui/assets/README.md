@@ -10,5 +10,13 @@ teal-on-dark mark you provided). The app uses it automatically for:
 If `scribe.png` is missing, the app falls back to a drawn microphone glyph, so
 nothing breaks — but drop the file here to get the real logo everywhere.
 
-An `.ico` (`scribe.ico`) can also be placed here for the Windows installer /
-executable icon (see `packaging/installer.iss` and `packaging/scribe.spec`).
+`scribe.ico` is the Windows executable / installer icon (Explorer, taskbar,
+Alt-Tab, the setup wizard). **It is generated from `scribe.png`** — after
+changing the logo, regenerate it:
+
+```
+python tools/make_icon.py     # needs Pillow (build-time only)
+```
+
+`packaging/scribe.spec` embeds it into `scribe.exe` / `scribe-tray.exe` and
+`packaging/installer.iss` uses it for the installer chrome.
