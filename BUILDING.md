@@ -4,6 +4,64 @@ End users should download an installer from Releases. This file is for
 maintainers producing those installers. Everything here runs offline except
 pip/model downloads.
 
+## Deciding *which* installer a locked-down PC can take
+
+Corporate PCs block different parts of the install in different ways: one
+company allows a per-user EXE but not Python, the next allows Python but blocks
+executables in `%LOCALAPPDATA%`, a third breaks pip with TLS inspection, a
+fourth blocks the keyboard hook Scribe needs to work at all. Guessing wastes a
+support round-trip per client.
+
+`tools\scribe-envcheck.ps1` answers the question on the target machine. Send it
+to whoever has the PC and have them run:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scribe-envcheck.ps1
+```
+
+It probes the machine *functionally* — it really writes to each candidate
+folder, really launches a test executable from each one, really touches the
+registry keys the installer touches, really opens TLS to pypi.org and
+huggingface.co — then prints a GO / GO-WITH-CAVEATS / BLOCKED verdict for each
+delivery path plus a concrete build recipe: which artifact to ship, where to
+install it, which autostart mechanism survives, and whether the speech models
+have to be pre-seeded. It writes a `.txt` transcript and a `.json` report; ask
+for the JSON back, since it diffs cleanly between clients.
+
+It needs no admin rights, installs nothing, and deletes every probe file,
+registry value, shortcut and scheduled task it creates.
+
+Two flags matter:
+
+- **`-TestInputHooks`** — off by default. Scribe's push-to-talk needs a
+  `WH_KEYBOARD_LL` hook, and some EDR products block that as keylogger-like
+  behaviour, which would make Scribe non-functional no matter how it is
+  installed. The probe installs a do-nothing pass-through hook for ~100 ms and
+  inspects no keystroke, but because installing a global hook can itself raise
+  an EDR alert, it is opt-in. Without it that verdict stays UNKNOWN.
+- **Run it under Windows PowerShell 5.1, not PowerShell 7.** Only 5.1 can
+  compile a genuinely *unsigned* test executable (`Add-Type -OutputAssembly`),
+  which is what distinguishes "this folder is path-blocked" from "this machine
+  needs a code-signing certificate". Under PowerShell 7 that verdict degrades
+  to UNKNOWN and the script says so.
+
+Also run it **unelevated**. Most application-control policies exempt
+administrators, so an elevated run reports a far rosier machine than the user
+actually has; the script detects this and warns.
+
+Exit codes for scripted use: `0` a path works, `1` only with caveats, `2`
+nothing works without IT involvement.
+
+### If this script will not run
+
+A machine that blocks `.ps1` execution outright is itself a finding — record it
+and treat the Python-from-source path as dead. To get a report anyway, have the
+user paste the script's contents into an interactive PowerShell window (Start →
+type "powershell"), which bypasses file-based script policy but not Constrained
+Language Mode or AppLocker's script rules. If even that fails, the machine is
+locked down hard enough that only the "REQUIRES IT" route applies: an
+IT-deployed package plus an allowlist rule.
+
 ## Windows (ARM64 / Snapdragon X, or x64)
 
 The bundle contains whatever backend the *building* venv has, so build each
