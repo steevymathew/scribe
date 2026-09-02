@@ -10,3 +10,4 @@ models/
 *.jks
 keystore.properties
 fixtures/audio/
+dist/
