@@ -72,7 +72,25 @@ data class ScribeConfig(
 
     // Onboarding
     val onboardingComplete: Boolean = false,
+
+    /**
+     * How long decoding takes relative to the length of what was said, averaged over
+     * recent dictations. Below 1.0 means the phone transcribes faster than people speak.
+     *
+     * Measured from real use rather than a synthetic benchmark at first launch: the
+     * numbers are then true for this phone, this model and this person's utterance
+     * lengths, and nobody pays a startup cost for a measurement that a real dictation
+     * would have produced anyway.
+     */
     val measuredRealTimeFactor: Double? = null,
+
+    /**
+     * Packages Scribe has actually been used in, most recent first. Populated only by
+     * dictating; Android's package list is a restricted permission and is never requested.
+     * This is what the tone screen offers, so it can only ever list apps the user has
+     * already dictated into.
+     */
+    val recentApps: List<String> = emptyList(),
 ) {
     /**
      * The clean-pipeline context for a given app.
@@ -139,6 +157,7 @@ class SettingsRepository(private val context: Context) {
             prefs[K_HANDEDNESS] = next.handedness.name
             prefs[K_BUBBLE] = next.bubbleEnabled
             prefs[K_ONBOARDED] = next.onboardingComplete
+            prefs[K_RECENT_APPS] = next.recentApps.take(MAX_RECENT_APPS).joinToString("\n")
             next.measuredRealTimeFactor?.let { prefs[K_RTF] = it.toString() }
         }
     }
@@ -172,6 +191,8 @@ class SettingsRepository(private val context: Context) {
             bubbleEnabled = this[K_BUBBLE] ?: defaults.bubbleEnabled,
             onboardingComplete = this[K_ONBOARDED] ?: defaults.onboardingComplete,
             measuredRealTimeFactor = this[K_RTF]?.toDoubleOrNull(),
+            recentApps = this[K_RECENT_APPS]?.split("\n")?.filter { it.isNotBlank() }
+                ?: defaults.recentApps,
         )
     }
 
@@ -198,6 +219,10 @@ class SettingsRepository(private val context: Context) {
         val K_BUBBLE = booleanPreferencesKey("bubble_enabled")
         val K_ONBOARDED = booleanPreferencesKey("onboarding_complete")
         val K_RTF = stringPreferencesKey("measured_rtf")
+        val K_RECENT_APPS = stringPreferencesKey("recent_apps")
+
+        /** Enough to cover the handful of apps anyone actually dictates into. */
+        const val MAX_RECENT_APPS = 12
     }
 }
 

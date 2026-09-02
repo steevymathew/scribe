@@ -39,6 +39,8 @@ import androidx.compose.ui.unit.sp
 import dev.smantics.scribe.dictation.ScribeEngine
 import dev.smantics.scribe.ui.components.Glyph
 import dev.smantics.scribe.ui.components.GlyphName
+import dev.smantics.scribe.ui.components.GhostButton
+import dev.smantics.scribe.ui.components.PrimaryButton
 import dev.smantics.scribe.ui.components.Waveform
 import dev.smantics.scribe.ui.theme.DictationStatus
 import dev.smantics.scribe.ui.theme.ScribeTokens
@@ -103,7 +105,7 @@ fun OnboardingScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (step > 0) {
-                GhostButton("Back") { step-- }
+                GhostButton("Back", "onboarding-back") { step-- }
             }
             Spacer(Modifier.weight(1f))
             val lastStep = step >= 4
@@ -347,42 +349,5 @@ private fun Chip(label: String, dot: androidx.compose.ui.graphics.Color) {
     ) {
         Box(Modifier.size(6.dp).clip(CircleShape).background(dot))
         Text(label, color = ScribeTokens.muted, fontSize = 12.sp)
-    }
-}
-
-@Composable
-fun PrimaryButton(
-    label: String,
-    enabled: Boolean,
-    testTag: String,
-    onClick: () -> Unit,
-) {
-    Box(
-        Modifier
-            .testTag(testTag)
-            .clip(RoundedCornerShape(ScribeTokens.radiusSm))
-            .background(if (enabled) ScribeTokens.accent else ScribeTokens.s2)
-            .clickable(enabled = enabled, onClick = onClick)
-            .semantics { contentDescription = label }
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-    ) {
-        Text(
-            label,
-            color = if (enabled) ScribeTokens.onAccent else ScribeTokens.faint,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
-}
-
-@Composable
-fun GhostButton(label: String, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .clip(RoundedCornerShape(ScribeTokens.radiusSm))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-    ) {
-        Text(label, color = ScribeTokens.muted, fontSize = 14.sp)
     }
 }

@@ -1,3 +1,4 @@
+import java.time.Duration
 import java.util.Properties
 
 plugins {
@@ -38,6 +39,11 @@ android {
                 storePassword = keystoreProperties.getProperty("storePassword")
                 keyAlias = keystoreProperties.getProperty("keyAlias")
                 keyPassword = keystoreProperties.getProperty("keyPassword")
+                // v2 alone installs everywhere Scribe runs, but v3 carries the key-rotation
+                // lineage — without it, a future key change would orphan every installed copy.
+                enableV1Signing = false
+                enableV2Signing = true
+                enableV3Signing = true
             }
         }
     }
@@ -102,6 +108,11 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
         unitTests.isIncludeAndroidResources = true
+        unitTests.all {
+            // Screenshot rendering needs an emulated x86-64 JVM on this host, so it lives
+            // in its own `screenshotTest` task rather than slowing every run down.
+            it.filter.excludeTestsMatching("*ScreenshotTest")
+        }
     }
 
     sourceSets {
@@ -126,6 +137,62 @@ val stageModels = tasks.register<Copy>("stageModels") {
     into(layout.projectDirectory.dir("src/main/assets/models"))
 }
 tasks.named("preBuild") { dependsOn(stageModels) }
+
+/**
+ * Screenshot rendering.
+ *
+ *   ./gradlew :app:screenshotTest                     — writes PNGs into app/build/screenshots
+ *   ./gradlew :app:screenshotTest -PemulatedJvm=true  — forces the emulated x86-64 JVM
+ *
+ * Robolectric's native graphics runtime and Paparazzi's layoutlib are published for x86-64
+ * only. On an x86-64 host this task simply works. **On this aarch64 build host it does
+ * not**, and that was established rather than assumed: an x86-64 Temurin 17 was extracted
+ * with `docker export` (see tools/setup-screenshot-jvm.sh), it runs fine under
+ * qemu-user — Gradle probes it as a real JDK 17 and Robolectric gets as far as resolving
+ * its SDK jars — and then the JVM aborts (SIGABRT, exit 134) while loading
+ * `nativeruntime-4.13`'s shared library. Emulating a JVM is one thing; emulating a JVM
+ * loading a graphics library that reaches into it is another.
+ *
+ * The task is kept, defaulting to the host JVM, because it is correct and useful on any
+ * x86-64 machine. On this host it fails, and the consequence is stated plainly rather than
+ * papered over: **the appearance of Scribe's UI has not been verified by anyone on this
+ * machine, and is marked OWNER-VERIFY.** The Robolectric flow tests in
+ * `ScribePanelTest` assert structure, reachability and screen-reader labelling, and make
+ * no claim about how anything looks.
+ */
+val screenshotTest = tasks.register<Test>("screenshotTest") {
+    group = "verification"
+    description = "Renders the UI to PNGs. Needs an x86-64 host, or -PemulatedJvm=true."
+
+    // The classpath is copied wholesale from the real unit-test task rather than
+    // reassembled by hand. Hand-assembling it loses pieces AGP adds late — the generated
+    // R classes, the merged resource config, the android.jar — and the failure arrives as
+    // an unresolvable annotation type, which names nothing useful.
+    val source = tasks.named<Test>("testStandardDebugUnitTest")
+    dependsOn(source)
+    testClassesDirs = files({ source.get().testClassesDirs })
+    classpath = files({ source.get().classpath })
+
+    if (providers.gradleProperty("emulatedJvm").orNull == "true") {
+        // The path must end in bin/java: Gradle derives a toolchain from an `executable`
+        // by stripping that suffix and probing it. The wrapper answers the probe by
+        // forwarding to the emulated JVM, so Gradle sees a genuine Java 17 installation.
+        executable = rootProject.file("tools/qemu-x86/x86-jvm/bin/java").absolutePath
+        // Under qemu the JVM resolves user.home from the emulated image's passwd entry
+        // rather than this account's, and Robolectric then tries to create its download
+        // lock in a directory that does not exist.
+        systemProperty("user.home", System.getProperty("user.home"))
+        environment("HOME", System.getProperty("user.home"))
+        maxHeapSize = "2g"
+    }
+
+    filter { includeTestsMatching("*ScreenshotTest") }
+    systemProperty("scribe.screenshots", layout.buildDirectory.dir("screenshots").get().asFile.path)
+    systemProperty("robolectric.graphicsMode", "NATIVE")
+    timeout.set(Duration.ofMinutes(30))
+    testLogging { events("passed", "failed", "skipped") }
+    outputs.upToDateWhen { false }
+}
 
 dependencies {
     implementation(project(":core"))

@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -83,6 +84,12 @@ private fun ScribeApp(
         }
     }
 
+    // Navigation is a single enum in state rather than a navigation library: there are
+    // four destinations, no deep links and no back stack worth the name, and a dependency
+    // that solves none of those is a dependency that only adds build weight.
+    var screen by remember { mutableStateOf(Screen.HOME) }
+    BackHandler(enabled = screen != Screen.HOME) { screen = Screen.HOME }
+
     if (!config.onboardingComplete) {
         OnboardingScreen(
             engine = engine,
@@ -97,18 +104,30 @@ private fun ScribeApp(
             },
         )
     } else {
-        val state by engine.state.collectAsState()
-        HomeScreen(
-            engine = engine,
-            config = config,
-            state = state,
-            micGranted = micGranted,
-            onRequestMic = { micLauncher.launch(Manifest.permission.RECORD_AUDIO) },
-            onOpenKeyboardSettings = { context.openKeyboardSettings() },
-            onOpenKeyboardPicker = { context.showKeyboardPicker() },
-        )
+        when (screen) {
+            Screen.HOME -> {
+                val state by engine.state.collectAsState()
+                HomeScreen(
+                    engine = engine,
+                    config = config,
+                    state = state,
+                    micGranted = micGranted,
+                    onRequestMic = { micLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+                    onOpenKeyboardSettings = { context.openKeyboardSettings() },
+                    onOpenKeyboardPicker = { context.showKeyboardPicker() },
+                    onOpenModels = { screen = Screen.MODELS },
+                    onOpenVocabulary = { screen = Screen.VOCABULARY },
+                    onOpenHistory = { screen = Screen.HISTORY },
+                )
+            }
+            Screen.MODELS -> ModelsScreen(engine, config) { screen = Screen.HOME }
+            Screen.VOCABULARY -> VocabularyScreen(engine, config) { screen = Screen.HOME }
+            Screen.HISTORY -> HistoryScreen(engine, config) { screen = Screen.HOME }
+        }
     }
 }
+
+private enum class Screen { HOME, MODELS, VOCABULARY, HISTORY }
 
 /** Whether Scribe is in the system's list of enabled input methods. */
 fun Context.isScribeEnabled(): Boolean {

@@ -181,6 +181,17 @@ class ScribeEngine private constructor(private val appContext: Context) {
     fun attach(sink: TextSink, packageName: String?) {
         this.sink = sink
         this.targetPackage = packageName
+        if (packageName != null && packageName != appContext.packageName) {
+            // Remembered only so the tone screen has something to offer. Android's package
+            // list is a restricted permission and Scribe never asks for it, so this list
+            // can only ever contain apps the user has actually dictated into.
+            scope.launch {
+                settings.update { c ->
+                    if (c.recentApps.firstOrNull() == packageName) c
+                    else c.copy(recentApps = (listOf(packageName) + c.recentApps).distinct())
+                }
+            }
+        }
         if (!hasMicPermission()) {
             _state.value = _state.value.copy(
                 status = DictationStatus.NEEDS_PERMISSION,
@@ -266,7 +277,10 @@ class ScribeEngine private constructor(private val appContext: Context) {
                 statusDetail = "Listening…",
                 error = null,
             )
-            is DictationEvent.RecordingStopped -> current
+            is DictationEvent.RecordingStopped -> {
+                lastAudioSeconds = event.durationSec
+                current
+            }
             DictationEvent.Transcribing -> current.copy(
                 status = DictationStatus.TRANSCRIBING,
                 statusDetail = "Transcribing…",
@@ -274,6 +288,7 @@ class ScribeEngine private constructor(private val appContext: Context) {
             )
             is DictationEvent.Injected -> {
                 recordHistory(event)
+                recordSpeed(event)
                 current.copy(
                     status = DictationStatus.READY,
                     statusDetail = if (event.text.isEmpty()) "Nothing heard" else "Inserted",
@@ -291,6 +306,32 @@ class ScribeEngine private constructor(private val appContext: Context) {
             )
         }
     }
+
+    /**
+     * Keep a running measure of how long decoding takes relative to speech.
+     *
+     * Measured from real use rather than a synthetic benchmark at startup: the result is
+     * then true for this phone, this model and this person's utterances, and nobody waits
+     * for a measurement at first launch that ordinary use would have produced anyway.
+     *
+     * A heavily smoothed average, because one thermally throttled decode is not evidence
+     * that the phone is too slow for the model.
+     */
+    private fun recordSpeed(event: DictationEvent.Injected) {
+        if (event.heavy || event.elapsedSec <= 0.0 || lastAudioSeconds <= 0.0) return
+        val sample = event.elapsedSec / lastAudioSeconds
+        if (sample <= 0.0 || sample > 30.0) return  // an outlier, not a measurement
+        scope.launch {
+            settings.update { c ->
+                val previous = c.measuredRealTimeFactor
+                val next = if (previous == null) sample else previous * 0.8 + sample * 0.2
+                c.copy(measuredRealTimeFactor = next)
+            }
+        }
+    }
+
+    /** Length of the clip most recently handed to the decoder, for the speed measure. */
+    @Volatile private var lastAudioSeconds: Double = 0.0
 
     private fun recordHistory(event: DictationEvent.Injected) {
         if (!config.historyEnabled || event.text.isEmpty()) return

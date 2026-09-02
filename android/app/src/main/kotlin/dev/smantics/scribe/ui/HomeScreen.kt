@@ -23,6 +23,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,6 +45,12 @@ import dev.smantics.scribe.settings.ScribeConfig
 import dev.smantics.scribe.ui.components.Glyph
 import dev.smantics.scribe.ui.components.GlyphName
 import dev.smantics.scribe.ui.components.ModeToggle
+import dev.smantics.scribe.ui.components.NavRow
+import dev.smantics.scribe.ui.components.ScribeCard
+import dev.smantics.scribe.ui.components.SecondaryButton
+import dev.smantics.scribe.ui.components.SectionLabel
+import dev.smantics.scribe.ui.components.Tag
+import dev.smantics.scribe.ui.components.ToggleRow
 import dev.smantics.scribe.ui.theme.Handedness
 import dev.smantics.scribe.ui.theme.ScribeTokens
 import dev.smantics.scribe.ui.theme.statusColor
@@ -70,10 +77,20 @@ fun HomeScreen(
     onRequestMic: () -> Unit,
     onOpenKeyboardSettings: () -> Unit,
     onOpenKeyboardPicker: () -> Unit,
+    onOpenModels: () -> Unit,
+    onOpenVocabulary: () -> Unit,
+    onOpenHistory: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val wide = LocalConfiguration.current.screenWidthDp >= WIDE_BREAKPOINT_DP
+
+    val installedCount = remember { engine.models.installed().size }
+    val modelSummary = "Using ${config.model} · $installedCount installed"
+    val vocabularySummary =
+        "${config.dictionary.size} words · ${config.snippets.size} shortcuts"
+    val historySummary =
+        if (config.historyEnabled) "On — saved on this phone" else "Off — nothing is saved"
 
     val keyboardEnabled = context.isScribeEnabled()
     val keyboardSelected = context.isScribeSelected()
@@ -93,14 +110,21 @@ fun HomeScreen(
                 )
             }
             ModeCard(config) { engine.toggleMode() }
+            SpeedAdviceCard(engine, config, onOpenModels)
         }
     }
 
     val right: @Composable () -> Unit = {
         Column(verticalArrangement = Arrangement.spacedBy(ScribeTokens.gapLarge)) {
-            ModelsCard(engine, config)
+            MoreCard(
+                modelSummary = modelSummary,
+                vocabularySummary = vocabularySummary,
+                historySummary = historySummary,
+                onModels = onOpenModels,
+                onVocabulary = onOpenVocabulary,
+                onHistory = onOpenHistory,
+            )
             CleanupCard(config) { update -> scope.launch { engine.settings.update(update) } }
-            PrivacyCard(engine, config) { update -> scope.launch { engine.settings.update(update) } }
             AboutCard()
         }
     }
@@ -160,7 +184,7 @@ private fun TitleRow() {
  */
 @Composable
 private fun StatusCard(state: EngineState, config: ScribeConfig) {
-    Card(testTag = "status-card") {
+    ScribeCard(testTag = "status-card") {
         Row(
             horizontalArrangement = Arrangement.spacedBy(ScribeTokens.gapSmall),
             verticalAlignment = Alignment.CenterVertically,
@@ -200,7 +224,7 @@ private fun SetupCard(
     onOpenKeyboardSettings: () -> Unit,
     onOpenKeyboardPicker: () -> Unit,
 ) {
-    Card(testTag = "setup-card") {
+    ScribeCard(testTag = "setup-card") {
         SectionLabel("FINISH SETTING UP")
         SetupRow(
             done = micGranted,
@@ -261,15 +285,53 @@ private fun SetupRow(
             if (!done) Text(body, color = ScribeTokens.muted, fontSize = 13.sp)
         }
         if (!done) {
-            SmallButton(action, onAction)
+            SecondaryButton(action, "setup-${action.lowercase().replace(' ', '-')}", onClick = onAction)
         }
+    }
+}
+
+/**
+ * Advice about the model, but only once there is evidence for it.
+ *
+ * Nothing is shown until Scribe has measured how fast this phone actually decodes, from
+ * real dictations. Guessing from the chipset name would be an interface stating something
+ * it does not know, and the recommendation would be wrong for exactly the phones that most
+ * need it right.
+ */
+@Composable
+private fun SpeedAdviceCard(
+    engine: ScribeEngine,
+    config: ScribeConfig,
+    onOpenModels: () -> Unit,
+) {
+    val rtf = config.measuredRealTimeFactor ?: return
+    val totalRamMb = remember { engine.models.totalRamMb() }
+    val suggested = ModelRegistry.recommend(totalRamMb, rtf)
+    if (suggested.id == config.model) return
+
+    val slower = rtf > 1.0
+    ScribeCard(testTag = "speed-advice-card") {
+        SectionLabel(if (slower) "THIS PHONE IS WORKING HARD" else "THIS PHONE HAS ROOM")
+        Text(
+            if (slower) {
+                "Transcribing takes about %.1f× as long as you spend speaking. ".format(rtf) +
+                    "${suggested.displayName} would keep up better."
+            } else {
+                "Transcribing takes about %.1f× as long as you spend speaking. ".format(rtf) +
+                    "${suggested.displayName} would make fewer mistakes on names without " +
+                    "feeling slow."
+            },
+            color = ScribeTokens.muted,
+            fontSize = 13.sp,
+        )
+        SecondaryButton("Open models", "advice-open-models", onClick = onOpenModels)
     }
 }
 
 /** Raw / Clean, in the app as well as on the keyboard, so it is discoverable. */
 @Composable
 private fun ModeCard(config: ScribeConfig, onToggle: () -> Unit) {
-    Card(testTag = "mode-card") {
+    ScribeCard(testTag = "mode-card") {
         SectionLabel("WHAT SCRIBE TYPES")
         Row(
             Modifier.fillMaxWidth(),
@@ -298,60 +360,39 @@ private fun ModeCard(config: ScribeConfig, onToggle: () -> Unit) {
     }
 }
 
+/**
+ * The way in to everything else.
+ *
+ * Rows rather than more cards: these are destinations, and a screen that renders every
+ * setting inline is the wall the desktop's UX review complains about.
+ */
 @Composable
-private fun ModelsCard(engine: ScribeEngine, config: ScribeConfig) {
-    Card(testTag = "models-card") {
-        SectionLabel("SPEECH MODELS")
-        ModelRegistry.speech.forEach { spec ->
-            val installed = engine.models.state(spec) is ModelState.Installed
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(ScribeTokens.gap),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            spec.displayName,
-                            color = ScribeTokens.text,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                        )
-                        if (spec.id == config.model) {
-                            Tag("IN USE", ScribeTokens.accent)
-                        }
-                    }
-                    Text(
-                        "${spec.tier.label} · ${spec.sizeMb} MB" +
-                            if (spec.bundled) " · included" else "",
-                        color = ScribeTokens.faint,
-                        fontSize = 12.sp,
-                    )
-                }
-                Text(
-                    if (installed) "Installed" else "Not installed",
-                    color = if (installed) ScribeTokens.good else ScribeTokens.muted,
-                    fontSize = 12.sp,
-                )
-            }
-        }
-        if (!BuildConfig.NETWORK_ALLOWED) {
-            Text(
-                "This is the offline build: it has no internet permission at all. Add other " +
-                    "models by copying the file onto the phone.",
-                color = ScribeTokens.muted,
-                fontSize = 13.sp,
-            )
-        }
+private fun MoreCard(
+    modelSummary: String,
+    vocabularySummary: String,
+    historySummary: String,
+    onModels: () -> Unit,
+    onVocabulary: () -> Unit,
+    onHistory: () -> Unit,
+) {
+    ScribeCard(testTag = "more-card") {
+        SectionLabel("SETTINGS")
+        NavRow("Models", modelSummary, "nav-models", onModels)
+        NavRow("Words and shortcuts", vocabularySummary, "nav-vocabulary", onVocabulary)
+        NavRow("History and network", historySummary, "nav-history", onHistory)
     }
 }
 
+/**
+ * The Clean pipeline's toggles.
+ *
+ * The desktop roadmap asks for the pipeline to be "ordered, each step toggleable"; the
+ * desktop shipped one toggle. These are the stages people actually disagree about — the
+ * rest are always on because nobody wants doubled spaces.
+ */
 @Composable
 private fun CleanupCard(config: ScribeConfig, onUpdate: ((ScribeConfig) -> ScribeConfig) -> Unit) {
-    Card(testTag = "cleanup-card") {
+    ScribeCard(testTag = "cleanup-card") {
         SectionLabel("CLEAN MODE")
         ToggleRow("Remove filler words", "um, uh, erm", config.removeFillers) { v ->
             onUpdate { it.copy(removeFillers = v) }
@@ -364,9 +405,11 @@ private fun CleanupCard(config: ScribeConfig, onUpdate: ((ScribeConfig) -> Scrib
             "\"4pm, actually 3pm\" becomes 3pm",
             config.selfCorrection,
         ) { v -> onUpdate { it.copy(selfCorrection = v) } }
-        ToggleRow("Format numbers and lists", "times, percentages, bullets", config.formatNumbers) { v ->
-            onUpdate { it.copy(formatNumbers = v, detectLists = v) }
-        }
+        ToggleRow(
+            "Format numbers and lists",
+            "times, percentages, bullets",
+            config.formatNumbers,
+        ) { v -> onUpdate { it.copy(formatNumbers = v, detectLists = v) } }
         ToggleRow(
             "Remove \"you know\" and \"I mean\"",
             "Off by default — they are also real phrases",
@@ -376,41 +419,8 @@ private fun CleanupCard(config: ScribeConfig, onUpdate: ((ScribeConfig) -> Scrib
 }
 
 @Composable
-private fun PrivacyCard(
-    engine: ScribeEngine,
-    config: ScribeConfig,
-    onUpdate: ((ScribeConfig) -> ScribeConfig) -> Unit,
-) {
-    Card(testTag = "privacy-card") {
-        SectionLabel("PRIVACY")
-        ToggleRow(
-            "Keep a history of what I dictate",
-            "Saved on this phone only. Off by default.",
-            config.historyEnabled,
-        ) { v -> onUpdate { it.copy(historyEnabled = v) } }
-
-        val requests = engine.models.ledger.entries()
-        Text(
-            if (!BuildConfig.NETWORK_ALLOWED) {
-                "This build has no internet permission, so there is nothing to list."
-            } else if (requests.isEmpty()) {
-                "Scribe has never made a network request."
-            } else {
-                "Network requests Scribe has made: ${requests.size}. All of them are model " +
-                    "downloads you asked for."
-            },
-            color = ScribeTokens.muted,
-            fontSize = 13.sp,
-        )
-        requests.take(3).forEach { entry ->
-            Text("${entry.whenText}  ${entry.reason}", color = ScribeTokens.faint, fontSize = 12.sp)
-        }
-    }
-}
-
-@Composable
 private fun AboutCard() {
-    Card(testTag = "about-card") {
+    ScribeCard(testTag = "about-card") {
         SectionLabel("ABOUT")
         Text(
             "Scribe ${BuildConfig.VERSION_NAME}",
@@ -424,85 +434,5 @@ private fun AboutCard() {
             color = ScribeTokens.muted,
             fontSize = 13.sp,
         )
-    }
-}
-
-// ------------------------------------------------------------------ building blocks
-
-/** The card surface from the desktop build: s1 fill, hairline stroke, 16dp radius. */
-@Composable
-private fun Card(testTag: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        Modifier
-            .testTag(testTag)
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(ScribeTokens.radius))
-            .background(ScribeTokens.s1)
-            .border(1.dp, ScribeTokens.stroke, RoundedCornerShape(ScribeTokens.radius))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(ScribeTokens.gapSmall),
-        content = content,
-    )
-}
-
-@Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text,
-        color = ScribeTokens.faint,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.Medium,
-        letterSpacing = 1.4.sp,
-    )
-}
-
-@Composable
-private fun ToggleRow(title: String, body: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(ScribeTokens.gap),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, color = ScribeTokens.text, fontSize = 14.sp)
-            Text(body, color = ScribeTokens.faint, fontSize = 12.sp)
-        }
-        Switch(
-            checked = checked,
-            onCheckedChange = onChange,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = ScribeTokens.onAccent,
-                checkedTrackColor = ScribeTokens.accent,
-                uncheckedThumbColor = ScribeTokens.muted,
-                uncheckedTrackColor = ScribeTokens.s2,
-                uncheckedBorderColor = ScribeTokens.stroke2,
-            ),
-        )
-    }
-}
-
-@Composable
-private fun SmallButton(label: String, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .clip(RoundedCornerShape(ScribeTokens.radiusSm))
-            .background(ScribeTokens.s2)
-            .border(1.dp, ScribeTokens.stroke2, RoundedCornerShape(ScribeTokens.radiusSm))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-    ) {
-        Text(label, color = ScribeTokens.text, fontSize = 13.sp)
-    }
-}
-
-@Composable
-private fun Tag(label: String, colour: androidx.compose.ui.graphics.Color) {
-    Box(
-        Modifier
-            .clip(RoundedCornerShape(ScribeTokens.radiusPill))
-            .background(colour.copy(alpha = 0.16f))
-            .padding(horizontal = 7.dp, vertical = 2.dp),
-    ) {
-        Text(label, color = colour, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.8.sp)
     }
 }
