@@ -2,4 +2,14 @@
     <string name="app_name">Scribe</string>
     <string name="ime_label">Scribe voice keyboard</string>
     <string name="ime_subtype_en">English</string>
+
+    <string name="listening_channel">Dictation</string>
+    <string name="listening_channel_body">Shown while Scribe has the microphone open.</string>
+    <string name="listening_title">Scribe is listening</string>
+    <string name="listening_body">Your voice is being transcribed on this phone.</string>
+
+    <string name="bubble_channel">Floating button</string>
+    <string name="bubble_channel_body">Shown while the optional floating button is on screen.</string>
+    <string name="bubble_title">Scribe bubble is on</string>
+    <string name="bubble_body">Tap the bubble to dictate. The keyboard is the reliable option.</string>
 </resources>

@@ -14,4 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "ScribeAndroid"
 include(":core")
-// include(":app")   // re-enabled once the app module lands
+include(":app")

@@ -108,9 +108,17 @@ object PolishGuard {
         return PolishVerdict.Accepted(trimmed)
     }
 
+    /**
+     * A model talking about the task instead of doing it.
+     *
+     * `<think>` is here because a reasoning model — Qwen 3 is offered as the stronger
+     * polish option — will sometimes emit its reasoning where the answer belongs. That
+     * must never reach the user's message, so it is rejected outright and the rules-only
+     * text stands.
+     */
     private val PREAMBLE = Regex(
-        """^(?:here(?:'s| is)|sure|certainly|okay|ok|the (?:corrected|cleaned|revised)|""" +
-            """corrected text|cleaned text|output)\b""",
+        """^(?:<think|<\|)|^(?:here(?:'s| is)|sure|certainly|okay|ok|""" +
+            """the (?:corrected|cleaned|revised)|corrected text|cleaned text|output)\b""",
         RegexOption.IGNORE_CASE,
     )
 }
