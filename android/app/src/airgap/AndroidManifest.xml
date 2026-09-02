@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      Intentionally empty. The airgap flavour declares no INTERNET permission, so the
+      claim "this app cannot send your voice anywhere" is not a promise in a privacy
+      policy but a property of the package, verifiable with:
+          aapt dump permissions Scribe-airgap.apk
+    -->
+</manifest>

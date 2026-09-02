@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      RECORD_AUDIO cannot be requested by an input method: an IME has no Activity to host
+      the system dialog. It is granted in the app during onboarding, and the keyboard
+      checks for it and offers a way back to the app when it is missing. See
+      ScribeInputMethodService.
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+      Only for the optional floating bubble, which is off by default. The keyboard needs
+      none of this; the bubble is offered because some people want Wispr Flow's shape,
+      with an honest warning attached about why that shape is the fragile one.
+    -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <uses-feature android:name="android.hardware.microphone" android:required="true" />
+
+    <application
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Scribe">
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.Scribe">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          The keyboard. This is the primary text-injection surface: the system binds it,
+          keeps it alive while a text field has focus, and never kills it for battery
+          reasons. That is the entire architectural bet of this port.
+        -->
+        <service
+            android:name=".ime.ScribeInputMethodService"
+            android:exported="true"
+            android:label="@string/ime_label"
+            android:permission="android.permission.BIND_INPUT_METHOD">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/method" />
+        </service>
+
+        <!--
+          Holds the microphone and the dictation state machine at process scope. The IME
+          view is destroyed and recreated when the Fold opens or closes; state that lived
+          in the view would be lost mid-sentence, so it lives here instead.
+        -->
+        <service
+            android:name=".dictation.DictationService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <service
+            android:name=".bubble.BubbleService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+    </application>
+</manifest>

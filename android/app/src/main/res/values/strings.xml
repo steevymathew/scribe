@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Scribe</string>
+    <string name="ime_label">Scribe voice keyboard</string>
+    <string name="ime_subtype_en">English</string>
+</resources>

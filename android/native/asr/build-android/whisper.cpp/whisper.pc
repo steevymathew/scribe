@@ -1,0 +1,10 @@
+prefix=/usr/local
+exec_prefix=${prefix}
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: whisper
+Description: Port of OpenAI's Whisper model in C/C++
+Version: 1.8.7
+Libs: -L${libdir} -lggml  -lggml-base -lwhisper
+Cflags: -I${includedir}
