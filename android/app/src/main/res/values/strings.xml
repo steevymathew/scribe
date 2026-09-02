@@ -12,4 +12,13 @@
     <string name="bubble_channel_body">Shown while the optional floating button is on screen.</string>
     <string name="bubble_title">Scribe bubble is on</string>
     <string name="bubble_body">Tap the bubble to dictate. The keyboard is the reliable option.</string>
+
+    <string name="voice_input_label">Scribe (on-device)</string>
+
+    <string name="a11y_description">Lets Scribe show a dictation button when you tap a text
+        box, and type what you say into it. Scribe checks whether the focused view accepts
+        text, and reads the field\'s contents only at the moment it inserts a transcript, so
+        it can place your words at the cursor without deleting what is already there.
+        Nothing is stored or sent anywhere.</string>
+    <string name="a11y_summary">Show a dictation button on text fields</string>
 </resources>

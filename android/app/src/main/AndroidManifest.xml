@@ -12,13 +12,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!--
-      Only for the optional floating bubble, which is off by default. The keyboard needs
-      none of this; the bubble is offered because some people want Wispr Flow's shape,
-      with an honest warning attached about why that shape is the fragile one.
-    -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-
     <uses-feature android:name="android.hardware.microphone" android:required="true" />
 
     <application
@@ -69,10 +62,44 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
+        <!--
+          Scribe as a system speech recogniser. This is what lets the microphone button on
+          a keyboard you already use — Samsung Keyboard, Gboard, FUTO — send its request
+          here and get text back, so dictating never means switching keyboards.
+          Register it under Settings > General management > Keyboard list and default >
+          Voice input.
+        -->
         <service
-            android:name=".bubble.BubbleService"
-            android:exported="false"
-            android:foregroundServiceType="microphone" />
+            android:name=".voice.ScribeRecognitionService"
+            android:exported="true"
+            android:label="@string/voice_input_label"
+            android:permission="android.permission.RECORD_AUDIO">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.speech"
+                android:resource="@xml/recognition_service" />
+        </service>
+
+        <!--
+          The floating bubble. An accessibility service because only one can tell whether a
+          text field has focus in another app, and only one can type into it. Off until the
+          user turns it on.
+        -->
+        <service
+            android:name=".bubble.ScribeAccessibilityService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
 
     </application>
 </manifest>

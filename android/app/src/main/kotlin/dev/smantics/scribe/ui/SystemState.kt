@@ -36,8 +36,19 @@ data class SystemSetupState(
     val micPermanentlyDenied: Boolean,
     val keyboardEnabled: Boolean,
     val keyboardSelected: Boolean,
+    /** Scribe is the system's speech recogniser, so any keyboard's mic button can use it. */
+    val voiceInputSelected: Boolean,
+    /** The accessibility service behind the floating bubble is switched on. */
+    val bubbleEnabled: Boolean,
 ) {
-    val complete: Boolean get() = micGranted && keyboardEnabled
+    /**
+     * Setup is complete once the microphone is granted and **any one** of the three ways
+     * of reaching Scribe is available. Requiring the keyboard specifically was wrong: on a
+     * phone where someone plugs Scribe into the keyboard they already use, the Scribe
+     * keyboard is never enabled and never needs to be.
+     */
+    val hasAnyInputRoute: Boolean get() = keyboardEnabled || voiceInputSelected || bubbleEnabled
+    val complete: Boolean get() = micGranted && hasAnyInputRoute
 }
 
 @Composable
@@ -59,6 +70,8 @@ private fun Context.readSetupState(): SystemSetupState {
         micPermanentlyDenied = !granted && micPermanentlyDenied(),
         keyboardEnabled = isScribeEnabled(),
         keyboardSelected = isScribeSelected(),
+        voiceInputSelected = isScribeTheVoiceInput(),
+        bubbleEnabled = isBubbleServiceEnabled(),
     )
 }
 
@@ -125,6 +138,56 @@ fun Context.isScribeSelected(): Boolean = runCatching {
     Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
         ?.startsWith(packageName) == true
 }.getOrDefault(false)
+
+/**
+ * Whether Scribe is the system's chosen speech recogniser.
+ *
+ * `voice_recognition_service` is the setting behind Samsung's *Keyboard list and default →
+ * Voice input* and the equivalent picker elsewhere. Read defensively: it is a platform
+ * setting rather than a public constant, and a device that does not expose it should make
+ * the row say "unknown", never crash.
+ */
+fun Context.isScribeTheVoiceInput(): Boolean = runCatching {
+    Settings.Secure.getString(contentResolver, "voice_recognition_service")
+        ?.startsWith(packageName) == true
+}.getOrDefault(false)
+
+/** Whether the bubble's accessibility service is switched on in system settings. */
+fun Context.isBubbleServiceEnabled(): Boolean = runCatching {
+    Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+        ?.split(':')
+        ?.any { it.startsWith(packageName) } == true
+}.getOrDefault(false)
+
+/**
+ * The picker where Scribe can be made the system voice input.
+ *
+ * Android has no single guaranteed destination for this, and Samsung buries it under the
+ * keyboard settings, so this tries the dedicated screen first and falls back rather than
+ * dead-ending on a device that lacks it.
+ */
+fun Context.openVoiceInputSettings() {
+    val candidates = listOf(
+        @Suppress("DEPRECATION")
+        Intent(Settings.ACTION_VOICE_INPUT_SETTINGS),
+        Intent(Settings.ACTION_INPUT_METHOD_SETTINGS),
+    )
+    for (intent in candidates) {
+        val started = runCatching {
+            startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.isSuccess
+        if (started) return
+    }
+}
+
+fun Context.openAccessibilitySettings() {
+    runCatching {
+        startActivity(
+            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+}
 
 fun Context.openKeyboardSettings() {
     runCatching {

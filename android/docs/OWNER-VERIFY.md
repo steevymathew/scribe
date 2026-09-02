@@ -107,3 +107,61 @@ In any chat app or notes app:
 `adb logcat -d > scribe-log.txt` after a session, plus the answer to §2's timing question
 and a screenshot of the panel on both displays. Those three things resolve most of what is
 currently unknown.
+
+---
+
+# v0.2.0 — the three routes
+
+The first build shipped only Scribe's own keyboard, and on a real Fold 7 it was listed,
+switched on, and never drew. That is fixed below, but the more useful change is that the
+keyboard is no longer the only way in.
+
+**Uninstall 0.1.0 first** if it is still there — same key, but a clean state is worth more
+than the two seconds saved.
+
+## 1 · Voice input — try this one first
+
+The route that needs no keyboard switching at all.
+
+- [ ] Settings → General management → Keyboard list and default → **Voice input**.
+      Is **"Scribe (on-device)"** in the list? Pick it.
+      If Samsung's picker only offers its own and Google's, say so — the service is
+      registered correctly (`adb shell dumpsys package dev.smantics.scribe | grep -A3
+      RecognitionService`), but Samsung Keyboard may only route to a fixed pair. In that
+      case try Gboard's microphone, or use the bubble.
+- [ ] Open any app, tap a text field, press the microphone on your usual keyboard.
+- [ ] Speak, then **stop speaking**. Scribe ends the utterance on about 1.5 s of silence —
+      there is no button to release on this path. Does it end when you expect, or does it
+      cut you off mid-thought? That timing is the one number I could not tune without a
+      device.
+
+## 2 · The bubble
+
+- [ ] Scribe → *Ways to use Scribe* → "A button that appears on text fields" → Turn on.
+      It opens Accessibility settings; enable Scribe there.
+- [ ] Tap any text box in any app. A small Scribe button should appear near the bottom
+      right, above the keyboard.
+- [ ] Tap it. It should expand into a strip with the waveform, the RAW/CLEAN switch, and a
+      hamburger that opens the model name.
+- [ ] Speak. The text should land at the cursor **without destroying anything already in
+      the field** — try it with a half-written message and the cursor in the middle.
+- [ ] Does the bubble disappear when no text field has focus? Does it stay put while you
+      are actually dictating?
+
+## 3 · The keyboard, which should now work
+
+The failure was Compose resolving its recomposer from the window's root view, which in an
+input method is a framework-created decor with no lifecycle owner attached — so composition
+never started and nothing drew.
+
+- [ ] Enable and select Scribe's keyboard. The panel should appear.
+- [ ] **If it still does not**, you should now see a plain dark panel naming the exception
+      instead of nothing at all. Send me that text — it is the whole diagnosis.
+- [ ] `adb logcat -s ScribeIME` if you want the same thing with a stack trace.
+
+## 4 · The logo
+
+- [ ] The launcher icon should be the Scribe mark — the teal S with the pen and microphone —
+      on a light tile, and the same mark should appear in the app header and on the
+      collapsed bubble. Tell me if the light tile looks wrong against your wallpaper; a
+      dark ground is a one-line change.

@@ -13,6 +13,7 @@ import dev.smantics.scribe.core.clean.PolishVerdict
 import dev.smantics.scribe.core.dictation.DictationEvent
 import dev.smantics.scribe.core.dictation.DictationMachine
 import dev.smantics.scribe.core.dictation.MachineSettings
+import dev.smantics.scribe.core.dictation.SilenceEndpointer
 import dev.smantics.scribe.core.dictation.TextSink
 import dev.smantics.scribe.core.model.ModelRegistry
 import dev.smantics.scribe.history.HistoryStore
@@ -331,6 +332,103 @@ class ScribeEngine private constructor(private val appContext: Context) {
         }
     }
 
+    // ------------------------------------------------------------- hands-free
+
+    /**
+     * Dictate without anything to hold down.
+     *
+     * The keyboard has a button you press and release, which is the most reliable
+     * end-of-speech signal there is. The other two surfaces do not: a keyboard's own
+     * microphone button routed here through the system voice-input service just starts
+     * listening, and the floating bubble is a single tap. Both need Scribe to notice the
+     * silence itself, which is what [SilenceEndpointer] is for.
+     *
+     * [onFinished] receives the cleaned text, or "" when nothing was said.
+     */
+    fun startHandsFree(
+        packageName: String? = null,
+        /**
+         * Where the text should go. Null when the caller wants the transcript handed back
+         * instead of typed — the system voice-input service returns it to whichever
+         * keyboard asked, and inserting it here as well would type everything twice.
+         */
+        sink: TextSink? = null,
+        onFinished: (text: String, raw: String) -> Unit,
+        onFailed: (reason: String) -> Unit = {},
+    ) {
+        if (!hasMicPermission()) {
+            onFailed("Scribe needs microphone access — open Scribe to allow it")
+            return
+        }
+        this.sink = sink ?: DiscardingSink
+        targetPackage = packageName
+        endpointer.reset()
+        handsFree = true
+        pendingTranscript = onFinished
+        pendingFailure = onFailed
+        DictationService.start(appContext)
+        machine.startRecording()
+        if (machine.status != DictationMachine.Status.RECORDING) {
+            handsFree = false
+            pendingTranscript = null
+            onFailed(_state.value.statusDetail)
+        }
+    }
+
+    /** End a hands-free session early — the user tapped stop, or dismissed the bubble. */
+    fun stopHandsFree() {
+        if (!handsFree) return
+        handsFree = false
+        stopRecording()
+    }
+
+    fun cancelHandsFree() {
+        handsFree = false
+        pendingTranscript = null
+        pendingFailure = null
+        cancel()
+        DictationService.stop(appContext)
+    }
+
+    /**
+     * Accepts and drops text, for callers that take the transcript through the callback.
+     * Without it the state machine would report "could not type into this field" for a
+     * session that never intended to type anywhere.
+     */
+    private object DiscardingSink : TextSink {
+        override fun commit(text: String) = Unit
+        override fun replace(previous: String, next: String) = false
+    }
+
+    private val endpointer = SilenceEndpointer()
+
+    @Volatile private var handsFree = false
+    @Volatile private var pendingTranscript: ((String, String) -> Unit)? = null
+    @Volatile private var pendingFailure: ((String) -> Unit)? = null
+
+    private fun onHandsFreeLevel(rms: Float) {
+        if (!handsFree) return
+        when (endpointer.onLevel(rms, System.currentTimeMillis())) {
+            SilenceEndpointer.Decision.CONTINUE -> Unit
+            SilenceEndpointer.Decision.ENDED,
+            SilenceEndpointer.Decision.TOO_LONG,
+            -> {
+                handsFree = false
+                stopRecording()
+            }
+            SilenceEndpointer.Decision.NOTHING_HEARD -> {
+                // Transcribing a room produces a confident sentence out of nothing.
+                handsFree = false
+                val fail = pendingFailure
+                pendingTranscript = null
+                pendingFailure = null
+                cancel()
+                DictationService.stop(appContext)
+                fail?.invoke("Didn't catch anything")
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- events
 
     private fun onEvent(event: DictationEvent) {
@@ -364,6 +462,7 @@ class ScribeEngine private constructor(private val appContext: Context) {
             is DictationEvent.Injected -> {
                 recordHistory(event)
                 recordSpeed(event)
+                deliverHandsFree(event)
                 current.copy(
                     status = DictationStatus.READY,
                     statusDetail = if (event.text.isEmpty()) "Nothing heard" else "Inserted",
@@ -372,7 +471,10 @@ class ScribeEngine private constructor(private val appContext: Context) {
                 )
             }
             is DictationEvent.Boost -> current.copy(boostActive = event.active)
-            is DictationEvent.Level -> current.copy(level = event.rms)
+            is DictationEvent.Level -> {
+                onHandsFreeLevel(event.rms)
+                current.copy(level = event.rms)
+            }
             is DictationEvent.Error -> current.copy(
                 status = DictationStatus.ERROR,
                 statusDetail = event.message,
@@ -407,6 +509,15 @@ class ScribeEngine private constructor(private val appContext: Context) {
 
     /** Length of the clip most recently handed to the decoder, for the speed measure. */
     @Volatile private var lastAudioSeconds: Double = 0.0
+
+    private fun deliverHandsFree(event: DictationEvent.Injected) {
+        val waiting = pendingTranscript ?: return
+        pendingTranscript = null
+        pendingFailure = null
+        handsFree = false
+        DictationService.stop(appContext)
+        runCatching { waiting(event.text, event.raw) }
+    }
 
     private fun recordHistory(event: DictationEvent.Injected) {
         if (!config.historyEnabled || event.text.isEmpty()) return

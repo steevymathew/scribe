@@ -6,6 +6,9 @@ import android.inputmethodservice.InputMethodService
 import android.os.Build
 import android.view.KeyEvent
 import android.view.View
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.view.inputmethod.EditorInfo
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
@@ -58,25 +61,81 @@ class ScribeInputMethodService : InputMethodService() {
         }
     }
 
+    /**
+     * Build the panel.
+     *
+     * The owners are applied to the window's decor as well as to the ComposeView, and the
+     * lifecycle is moved to RESUMED here rather than waiting for `onStartInputView` —
+     * Compose's frame clock starts paused and only runs from `ON_START`, so a host still
+     * at CREATED composes and then draws nothing at all.
+     *
+     * The whole thing is wrapped. If composition cannot start, the alternative to a
+     * fallback view is an input method that is listed, can be enabled, and silently never
+     * appears — which is precisely how this failed the first time it was put on a phone.
+     * A keyboard that says why it is broken is worth far more than one that vanishes.
+     */
     override fun onCreateInputView(): View {
-        val view = ComposeView(this).apply {
-            // The panel is torn down with its window rather than with the composition, so
-            // a fold/unfold rebuilds cleanly instead of leaking the previous composition.
-            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
-            setContent {
-                val state by engine.state.collectAsState()
-                val hand by handedness.collectAsState()
-                ScribeTheme(handedness = hand) {
-                    ScribePanel(state = state, actions = panelActions)
+        host.attachToWindowRoot(window?.window?.decorView)
+        host.onResume()
+
+        return runCatching {
+            ComposeView(this).apply {
+                // Torn down with its window rather than with the composition, so a
+                // fold/unfold rebuilds cleanly instead of leaking the previous one.
+                setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+                setContent {
+                    val state by engine.state.collectAsState()
+                    val hand by handedness.collectAsState()
+                    ScribeTheme(handedness = hand) {
+                        ScribePanel(state = state, actions = panelActions)
+                    }
                 }
+                host.attachTo(this)
             }
+        }.getOrElse { failure ->
+            Log.e(TAG, "the Compose panel could not be created", failure)
+            fallbackView(failure)
         }
-        host.attachTo(view)
-        return view
+    }
+
+    /**
+     * A plain-View panel for when Compose will not start.
+     *
+     * Deliberately built from nothing but framework classes, so it cannot fail for the
+     * same reason the real panel did. It reports the failure and offers the one action
+     * that always works — going back to the previous keyboard.
+     */
+    private fun fallbackView(failure: Throwable): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setBackgroundColor(0xFF0B0F14.toInt())
+        setPadding(48, 48, 48, 48)
+        addView(
+            TextView(context).apply {
+                text = "Scribe's keyboard could not start on this device."
+                setTextColor(0xFFE7EEF4.toInt())
+                textSize = 15f
+            },
+        )
+        addView(
+            TextView(context).apply {
+                text = "${failure::class.java.simpleName}: ${failure.message}"
+                setTextColor(0xFF93A1B0.toInt())
+                textSize = 12f
+                setPadding(0, 16, 0, 24)
+            },
+        )
+        addView(
+            Button(context).apply {
+                text = "Switch keyboard"
+                setOnClickListener { panelActions.switchKeyboard() }
+            },
+        )
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        // The decor exists for certain by now, even if it did not when the view was built.
+        host.attachToWindowRoot(window?.window?.decorView)
         host.onResume()
         // The package being typed into is the only context Scribe ever reads, and it is
         // used for one thing: choosing a tone profile. Nothing about the field's contents

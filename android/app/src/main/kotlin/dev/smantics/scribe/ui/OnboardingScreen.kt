@@ -44,6 +44,7 @@ import dev.smantics.scribe.ui.components.Glyph
 import dev.smantics.scribe.ui.components.GlyphName
 import dev.smantics.scribe.ui.components.GhostButton
 import dev.smantics.scribe.ui.components.PrimaryButton
+import dev.smantics.scribe.ui.components.ScribeMark
 import dev.smantics.scribe.ui.components.SecondaryButton
 import dev.smantics.scribe.ui.components.Waveform
 import dev.smantics.scribe.ui.theme.DictationStatus
@@ -187,7 +188,7 @@ private fun Header(step: Int) {
             horizontalArrangement = Arrangement.spacedBy(ScribeTokens.gapSmall),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            BrandMark()
+            ScribeMark(size = 30.dp)
             Text("Set up Scribe", color = ScribeTokens.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -201,23 +202,6 @@ private fun Header(step: Int) {
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun BrandMark(size: androidx.compose.ui.unit.Dp = 30.dp) {
-    Box(
-        Modifier
-            .size(size)
-            .clip(RoundedCornerShape(size * ScribeTokens.BRAND_RADIUS_RATIO))
-            .background(
-                androidx.compose.ui.graphics.Brush.linearGradient(
-                    listOf(ScribeTokens.accent, ScribeTokens.accent2),
-                ),
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Glyph(GlyphName.MIC, ScribeTokens.onAccent, size = size * 0.53f, thickness = 1.6.dp)
     }
 }
 
@@ -289,10 +273,23 @@ private fun MicrophoneStep(
 @Composable
 private fun KeyboardStep(enabled: Boolean, onOpen: () -> Unit) {
     StepBody(
-        title = "Turn on the keyboard",
-        body = "Scribe works as a keyboard. That is what lets it type into any app " +
-            "reliably, without a floating button that Android keeps shutting down.",
+        title = "How you'll use it",
+        body = "Scribe can work three ways. You only need one, and you can change your " +
+            "mind later from the home screen.",
     ) {
+        RouteExplainer(
+            "In the keyboard you already have",
+            "Set Scribe as the phone's voice input, then press the microphone button on " +
+                "whatever keyboard you use. Nothing to switch to. This is the easiest one.",
+        )
+        RouteExplainer(
+            "A button on text fields",
+            "A small Scribe button appears whenever you tap a text box.",
+        )
+        RouteExplainer(
+            "Scribe's own keyboard",
+            "A full dictation panel you switch to, and back from, in one tap.",
+        )
         if (enabled) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(ScribeTokens.gapSmall),
@@ -301,15 +298,28 @@ private fun KeyboardStep(enabled: Boolean, onOpen: () -> Unit) {
                 Glyph(GlyphName.CHECK, ScribeTokens.good, size = 18.dp)
                 Text("Scribe keyboard is on", color = ScribeTokens.good, fontSize = 13.sp)
             }
-        } else {
-            Text(
-                "In the screen that opens, switch on \"Scribe voice keyboard\", then come " +
-                    "back here.",
-                color = ScribeTokens.muted,
-                fontSize = 13.sp,
-            )
-            PrimaryButton("Open keyboard settings", enabled = true, testTag = "open-ime-settings", onClick = onOpen)
         }
+        Text(
+            "Finish setting up, and the home screen will walk you through whichever you pick.",
+            color = ScribeTokens.muted,
+            fontSize = 13.sp,
+        )
+    }
+}
+
+@Composable
+private fun RouteExplainer(title: String, body: String) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(ScribeTokens.radiusSm))
+            .background(ScribeTokens.s1)
+            .border(1.dp, ScribeTokens.stroke, RoundedCornerShape(ScribeTokens.radiusSm))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(title, color = ScribeTokens.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Text(body, color = ScribeTokens.muted, fontSize = 12.sp)
     }
 }
 

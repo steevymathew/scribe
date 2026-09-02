@@ -46,6 +46,7 @@ import dev.smantics.scribe.ui.components.Glyph
 import dev.smantics.scribe.ui.components.GlyphName
 import dev.smantics.scribe.ui.components.ModeToggle
 import dev.smantics.scribe.ui.components.NavRow
+import dev.smantics.scribe.ui.components.ScribeMark
 import dev.smantics.scribe.ui.components.ScribeCard
 import dev.smantics.scribe.ui.components.SecondaryButton
 import dev.smantics.scribe.ui.components.SectionLabel
@@ -77,6 +78,8 @@ fun HomeScreen(
     onRequestMic: () -> Unit,
     onOpenKeyboardSettings: () -> Unit,
     onOpenKeyboardPicker: () -> Unit,
+    onOpenVoiceInput: () -> Unit,
+    onOpenAccessibility: () -> Unit,
     onOpenModels: () -> Unit,
     onOpenVocabulary: () -> Unit,
     onOpenHistory: () -> Unit,
@@ -98,18 +101,19 @@ fun HomeScreen(
     val left: @Composable () -> Unit = {
         Column(verticalArrangement = Arrangement.spacedBy(ScribeTokens.gapLarge)) {
             StatusCard(state, config)
-            if (!system.complete) {
-                SetupCard(
-                    system = system,
-                    onRequestMic = onRequestMic,
-                    onOpenKeyboardSettings = onOpenKeyboardSettings,
-                )
+            if (!system.micGranted) {
+                SetupCard(system = system, onRequestMic = onRequestMic)
             }
-            // Permanently available, not only while setup is unfinished. Switching to
-            // Scribe inside another app is the step someone who does not know what an IME
-            // is will struggle with, and the one control that helps used to disappear at
-            // exactly the moment setup succeeded.
-            KeyboardCard(system, onOpenKeyboardPicker, onOpenKeyboardSettings)
+            // Permanently available, not only while setup is unfinished: these are the
+            // routes into the product, and one of them being off is a thing the user needs
+            // to be able to find and fix at any time.
+            WaysToUseCard(
+                system = system,
+                onOpenKeyboardPicker = onOpenKeyboardPicker,
+                onOpenKeyboardSettings = onOpenKeyboardSettings,
+                onOpenVoiceInput = onOpenVoiceInput,
+                onOpenAccessibility = onOpenAccessibility,
+            )
             ModeCard(config) { engine.toggleMode() }
             SpeedAdviceCard(engine, config, onOpenModels)
         }
@@ -159,19 +163,7 @@ private fun TitleRow() {
         horizontalArrangement = Arrangement.spacedBy(ScribeTokens.gap),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier
-                .size(34.dp)
-                .clip(RoundedCornerShape(34.dp * ScribeTokens.BRAND_RADIUS_RATIO))
-                .background(
-                    androidx.compose.ui.graphics.Brush.linearGradient(
-                        listOf(ScribeTokens.accent, ScribeTokens.accent2),
-                    ),
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Glyph(GlyphName.MIC, ScribeTokens.onAccent, size = 18.dp, thickness = 1.6.dp)
-        }
+        ScribeMark(size = 34.dp)
         Text("Scribe", color = ScribeTokens.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
     }
 }
@@ -215,12 +207,11 @@ private fun StatusCard(state: EngineState, config: ScribeConfig) {
     }
 }
 
-/** The three things that must be true before the keyboard can do anything. */
+/** The one thing nothing works without. */
 @Composable
 private fun SetupCard(
     system: SystemSetupState,
     onRequestMic: () -> Unit,
-    onOpenKeyboardSettings: () -> Unit,
 ) {
     ScribeCard(testTag = "setup-card") {
         SectionLabel("FINISH SETTING UP")
@@ -235,53 +226,107 @@ private fun SetupCard(
             action = if (system.micPermanentlyDenied) "Open settings" else "Allow",
             onAction = onRequestMic,
         )
-        SetupRow(
-            done = system.keyboardEnabled,
-            title = "Turn on the Scribe keyboard",
-            body = "In Settings, switch on \"Scribe voice keyboard\".",
-            action = "Open settings",
-            onAction = onOpenKeyboardSettings,
-        )
     }
 }
 
 /**
- * How to actually use Scribe once it is set up.
+ * The three ways to reach Scribe, and which of them are switched on.
  *
- * Not a checklist item: choosing the keyboard is something the user does every time they
- * want to dictate, not a step that completes. It is shown as current state plus the
- * control, permanently, because "a feature nobody can find has not shipped".
+ * This is the most important card in the app. Scribe's first version shipped with only its
+ * own keyboard, and on a real phone that turned out to be both the hardest route to set up
+ * and the least likely one to be wanted: someone who already has a keyboard they like does
+ * not want to swap it out to dictate a sentence. Any one of these is enough.
  */
 @Composable
-private fun KeyboardCard(
+private fun WaysToUseCard(
     system: SystemSetupState,
     onOpenKeyboardPicker: () -> Unit,
     onOpenKeyboardSettings: () -> Unit,
+    onOpenVoiceInput: () -> Unit,
+    onOpenAccessibility: () -> Unit,
 ) {
-    ScribeCard(testTag = "keyboard-card") {
-        SectionLabel("USING SCRIBE")
+    ScribeCard(testTag = "ways-card") {
+        SectionLabel("WAYS TO USE SCRIBE")
         Text(
-            when {
-                !system.keyboardEnabled ->
-                    "Scribe is not switched on as a keyboard yet."
-                system.keyboardSelected ->
-                    "Scribe is your current keyboard. Tap any text box and hold the microphone."
-                else ->
-                    "Tap a text box in any app, then switch keyboards to Scribe. One tap on " +
-                        "the keyboard icon takes you back afterwards."
-            },
+            "Any one of these is enough. You do not need all three.",
             color = ScribeTokens.muted,
             fontSize = 13.sp,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(ScribeTokens.gapSmall)) {
-            SecondaryButton("Choose keyboard", "choose-keyboard", onClick = onOpenKeyboardPicker)
-            if (!system.keyboardEnabled) {
-                SecondaryButton(
-                    "Keyboard settings",
-                    "keyboard-settings",
-                    onClick = onOpenKeyboardSettings,
+
+        WayRow(
+            on = system.voiceInputSelected,
+            title = "In the keyboard you already use",
+            body = "Set Scribe as the phone's voice input, then use the microphone button " +
+                "on Samsung Keyboard, Gboard or anything else. Nothing to switch to.",
+            action = "Set voice input",
+            testTag = "way-voice",
+            onAction = onOpenVoiceInput,
+            recommended = true,
+        )
+        WayRow(
+            on = system.bubbleEnabled,
+            title = "A button that appears on text fields",
+            body = "A small Scribe button floats near any text box you tap. Needs " +
+                "accessibility access, because that is the only way an app can tell a text " +
+                "field is focused.",
+            action = "Turn on",
+            testTag = "way-bubble",
+            onAction = onOpenAccessibility,
+        )
+        WayRow(
+            on = system.keyboardEnabled,
+            title = "Scribe's own keyboard",
+            body = if (system.keyboardEnabled && !system.keyboardSelected) {
+                "Switched on. Choose it from the keyboard switcher when you want to dictate."
+            } else {
+                "A full dictation panel with the waveform and the Raw/Clean switch. You " +
+                    "switch to it, then back, in one tap."
+            },
+            action = if (system.keyboardEnabled) "Choose keyboard" else "Turn on",
+            testTag = "way-keyboard",
+            onAction = if (system.keyboardEnabled) onOpenKeyboardPicker else onOpenKeyboardSettings,
+        )
+    }
+}
+
+@Composable
+private fun WayRow(
+    on: Boolean,
+    title: String,
+    body: String,
+    action: String,
+    testTag: String,
+    onAction: () -> Unit,
+    recommended: Boolean = false,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(ScribeTokens.gap),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+            if (on) {
+                Glyph(GlyphName.CHECK, ScribeTokens.good, size = 18.dp)
+            } else {
+                Box(
+                    Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .border(1.5.dp, ScribeTokens.faint, CircleShape),
                 )
             }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(title, color = ScribeTokens.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                if (on) Tag("ON", ScribeTokens.good)
+                else if (recommended) Tag("EASIEST", ScribeTokens.accent)
+            }
+            Text(body, color = ScribeTokens.muted, fontSize = 12.sp)
+            SecondaryButton(action, testTag, onClick = onAction)
         }
     }
 }

@@ -55,6 +55,13 @@ object ScribeTokens {
     /** Ink used on top of the accent gradient — from Brand.qml. */
     val onAccent = Color(0xFF04201D)
 
+    /**
+     * The light tile the Scribe mark sits on, in the app and as the launcher icon ground.
+     * The mark contains black; on this product's near-black surface it needs its own
+     * ground or half the logo disappears.
+     */
+    val markGround = Color(0xFFF4F7F9)
+
     // Radii
     val radius = 16.dp
     val radiusSm = 11.dp

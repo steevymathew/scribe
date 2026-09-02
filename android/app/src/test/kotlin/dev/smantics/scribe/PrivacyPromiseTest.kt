@@ -132,6 +132,11 @@ class PrivacyPromiseTest {
     /**
      * A dictation app has no reason to read contacts, location, storage or the camera, and
      * asking for any of them would undercut everything else it says about itself.
+     *
+     * SYSTEM_ALERT_WINDOW is deliberately absent: the floating bubble draws with
+     * `TYPE_ACCESSIBILITY_OVERLAY` from the accessibility service that has to exist anyway
+     * to know a text field is focused, so turning the bubble on costs one permission
+     * rather than two.
      */
     @Test
     fun `no permission beyond what dictation needs`() {
@@ -140,7 +145,6 @@ class PrivacyPromiseTest {
             "android.permission.FOREGROUND_SERVICE",
             "android.permission.FOREGROUND_SERVICE_MICROPHONE",
             "android.permission.POST_NOTIFICATIONS",
-            "android.permission.SYSTEM_ALERT_WINDOW",
         )
         // BIND_INPUT_METHOD appears in the manifest but is not requested: it is the
         // permission the *system* must hold to bind Scribe's keyboard service, which is
