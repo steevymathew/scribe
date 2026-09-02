@@ -47,6 +47,44 @@ class PrivacyPromiseTest {
     }
 
     /**
+     * There is exactly one place in Scribe that can open a network connection.
+     *
+     * That is what makes the ledger in Settings complete rather than best-effort: a
+     * request that could happen somewhere else would be a request the user is never shown.
+     * If a second call site ever appears, either it records to the ledger too or this
+     * claim stops being true — and this test forces that decision to be made deliberately.
+     */
+    @Test
+    fun `only the model downloader can reach the network`() {
+        val sourceRoots = listOf(
+            File(projectDir, "src/main/kotlin"),
+            File(projectDir, "../core/src/main/kotlin"),
+        )
+        val networkApis = Regex(
+            """\b(URL\(|HttpURLConnection|OkHttpClient|Socket\(|DatagramSocket|""" +
+                """InetAddress|WebView|Retrofit)""",
+        )
+        val callSites = sourceRoots
+            .filter { it.isDirectory }
+            .flatMap { root -> root.walkTopDown().filter { it.isFile && it.extension == "kt" } }
+            .filter { file ->
+                file.readLines().any { line ->
+                    val code = line.substringBefore("//")
+                    !code.trimStart().startsWith("import") && networkApis.containsMatchIn(code)
+                }
+            }
+            .map { it.name }
+            .toSet()
+
+        assertEquals(
+            "network access must stay confined to the model downloader, which records " +
+                "every request in the ledger the user can read",
+            setOf("ModelStore.kt"),
+            callSites,
+        )
+    }
+
+    /**
      * The airgap flavour's whole argument is that it *cannot* reach a network, which is a
      * property of its manifest rather than a policy. If `INTERNET` ever appears in the
      * shared manifest it would be inherited by both flavours and the argument would

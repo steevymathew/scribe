@@ -43,6 +43,8 @@ data class EngineState(
     val lastText: String = "",
     val error: String? = null,
     val polishAvailable: Boolean = false,
+    /** Whether the high-accuracy model is on disk. False on a fresh install. */
+    val heavyModelAvailable: Boolean = false,
 )
 
 /**
@@ -151,11 +153,27 @@ class ScribeEngine private constructor(private val appContext: Context) {
         worker.execute {
             runCatching { models.stageBundledModel() }
             machine.warmUp()
+            refreshHeavyModelAvailability()
             loadPolisherIfEnabled()
         }
     }
 
     @Volatile private var warmedUp = false
+
+    /**
+     * Whether the boost model is actually installed.
+     *
+     * Checked so the keyboard can say so *before* the user commits an utterance to it. An
+     * armed-looking bolt that turns into "high-accuracy model unavailable" after you have
+     * already spoken is a promise made and broken in the same breath.
+     */
+    fun refreshHeavyModelAvailability() {
+        val spec = ModelRegistry.byId(config.heavyModel) ?: ModelRegistry.SHARP
+        val present = models.fileFor(spec).isFile
+        if (present != _state.value.heavyModelAvailable) {
+            _state.value = _state.value.copy(heavyModelAvailable = present)
+        }
+    }
 
     private fun loadPolisherIfEnabled() {
         val c = config
@@ -178,9 +196,27 @@ class ScribeEngine private constructor(private val appContext: Context) {
 
     // ------------------------------------------------------------ the surface
 
+    /**
+     * Bind to whichever surface now has focus.
+     *
+     * The permission check here is deliberately **symmetric**. An earlier version only set
+     * NEEDS_PERMISSION when the microphone was missing and never cleared it, so a user who
+     * did exactly what the keyboard asked — open Scribe, grant the microphone, come back —
+     * found the same "Scribe needs the microphone" card waiting for them, with no way to
+     * dismiss it short of the process dying. Doing as you are told and being ignored is a
+     * worse experience than a plain refusal.
+     */
     fun attach(sink: TextSink, packageName: String?) {
         this.sink = sink
         this.targetPackage = packageName
+        refreshHeavyModelAvailability()
+        if (hasMicPermission() && _state.value.status == DictationStatus.NEEDS_PERMISSION) {
+            val loaded = machine.status == DictationMachine.Status.READY
+            _state.value = _state.value.copy(
+                status = if (loaded) DictationStatus.READY else DictationStatus.LOADING,
+                statusDetail = if (loaded) "Ready" else "Starting…",
+            )
+        }
         if (packageName != null && packageName != appContext.packageName) {
             // Remembered only so the tone screen has something to offer. Android's package
             // list is a restricted permission and Scribe never asks for it, so this list
@@ -210,6 +246,45 @@ class ScribeEngine private constructor(private val appContext: Context) {
     fun hasMicPermission(): Boolean =
         ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
+
+    // --------------------------------------------------------- level preview
+
+    /**
+     * Open the microphone purely to show a level, for the setup screen's meter.
+     *
+     * Nothing is transcribed and nothing is kept — the samples are read and dropped. It
+     * exists because a microphone check that cannot move is worse than no check at all:
+     * the user speaks at their phone in the first minute of using a dictation app and
+     * cannot tell a passive meter from a dead microphone.
+     *
+     * Deliberately separate from [startRecording]: this must never enter the state
+     * machine, never queue a decode, and never start the foreground service, because the
+     * user has not asked to dictate anything.
+     */
+    @Synchronized
+    fun startLevelPreview() {
+        if (previewRecorder != null || !hasMicPermission()) return
+        val recorder = MicRecorder(onLevel = { rms ->
+            _state.value = _state.value.copy(level = rms)
+        })
+        previewRecorder = runCatching { recorder.also { it.start() } }.getOrElse {
+            _state.value = _state.value.copy(
+                status = DictationStatus.ERROR,
+                statusDetail = "Microphone unavailable — another app may be using it",
+            )
+            null
+        }
+    }
+
+    @Synchronized
+    fun stopLevelPreview() {
+        val recorder = previewRecorder ?: return
+        previewRecorder = null
+        runCatching { recorder.stop() }
+        _state.value = _state.value.copy(level = 0f)
+    }
+
+    private var previewRecorder: MicRecorder? = null
 
     // -------------------------------------------------------------- controls
 

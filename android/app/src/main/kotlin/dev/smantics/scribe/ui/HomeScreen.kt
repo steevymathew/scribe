@@ -73,7 +73,7 @@ fun HomeScreen(
     engine: ScribeEngine,
     config: ScribeConfig,
     state: EngineState,
-    micGranted: Boolean,
+    system: SystemSetupState,
     onRequestMic: () -> Unit,
     onOpenKeyboardSettings: () -> Unit,
     onOpenKeyboardPicker: () -> Unit,
@@ -81,34 +81,35 @@ fun HomeScreen(
     onOpenVocabulary: () -> Unit,
     onOpenHistory: () -> Unit,
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val wide = LocalConfiguration.current.screenWidthDp >= WIDE_BREAKPOINT_DP
 
-    val installedCount = remember { engine.models.installed().size }
+    // Keyed on the setup state, which is itself re-read on resume, so returning from the
+    // models screen or from system settings refreshes the count rather than showing the
+    // number that happened to be true when this screen was first composed.
+    val installedCount = remember(system) { engine.models.installed().size }
     val modelSummary = "Using ${config.model} · $installedCount installed"
     val vocabularySummary =
         "${config.dictionary.size} words · ${config.snippets.size} shortcuts"
     val historySummary =
         if (config.historyEnabled) "On — saved on this phone" else "Off — nothing is saved"
 
-    val keyboardEnabled = context.isScribeEnabled()
-    val keyboardSelected = context.isScribeSelected()
-    val setupComplete = micGranted && keyboardEnabled
 
     val left: @Composable () -> Unit = {
         Column(verticalArrangement = Arrangement.spacedBy(ScribeTokens.gapLarge)) {
             StatusCard(state, config)
-            if (!setupComplete) {
+            if (!system.complete) {
                 SetupCard(
-                    micGranted = micGranted,
-                    keyboardEnabled = keyboardEnabled,
-                    keyboardSelected = keyboardSelected,
+                    system = system,
                     onRequestMic = onRequestMic,
                     onOpenKeyboardSettings = onOpenKeyboardSettings,
-                    onOpenKeyboardPicker = onOpenKeyboardPicker,
                 )
             }
+            // Permanently available, not only while setup is unfinished. Switching to
+            // Scribe inside another app is the step someone who does not know what an IME
+            // is will struggle with, and the one control that helps used to disappear at
+            // exactly the moment setup succeeded.
+            KeyboardCard(system, onOpenKeyboardPicker, onOpenKeyboardSettings)
             ModeCard(config) { engine.toggleMode() }
             SpeedAdviceCard(engine, config, onOpenModels)
         }
@@ -217,36 +218,71 @@ private fun StatusCard(state: EngineState, config: ScribeConfig) {
 /** The three things that must be true before the keyboard can do anything. */
 @Composable
 private fun SetupCard(
-    micGranted: Boolean,
-    keyboardEnabled: Boolean,
-    keyboardSelected: Boolean,
+    system: SystemSetupState,
     onRequestMic: () -> Unit,
     onOpenKeyboardSettings: () -> Unit,
-    onOpenKeyboardPicker: () -> Unit,
 ) {
     ScribeCard(testTag = "setup-card") {
         SectionLabel("FINISH SETTING UP")
         SetupRow(
-            done = micGranted,
+            done = system.micGranted,
             title = "Allow the microphone",
-            body = "Scribe records only while you hold the button.",
-            action = "Allow",
+            body = if (system.micPermanentlyDenied) {
+                "Android has stopped asking — this has to be switched on in Scribe's settings."
+            } else {
+                "Scribe records only while you hold the button."
+            },
+            action = if (system.micPermanentlyDenied) "Open settings" else "Allow",
             onAction = onRequestMic,
         )
         SetupRow(
-            done = keyboardEnabled,
+            done = system.keyboardEnabled,
             title = "Turn on the Scribe keyboard",
             body = "In Settings, switch on \"Scribe voice keyboard\".",
             action = "Open settings",
             onAction = onOpenKeyboardSettings,
         )
-        SetupRow(
-            done = keyboardSelected,
-            title = "Switch to it when you want to dictate",
-            body = "You can go back to your usual keyboard in one tap.",
-            action = "Choose keyboard",
-            onAction = onOpenKeyboardPicker,
+    }
+}
+
+/**
+ * How to actually use Scribe once it is set up.
+ *
+ * Not a checklist item: choosing the keyboard is something the user does every time they
+ * want to dictate, not a step that completes. It is shown as current state plus the
+ * control, permanently, because "a feature nobody can find has not shipped".
+ */
+@Composable
+private fun KeyboardCard(
+    system: SystemSetupState,
+    onOpenKeyboardPicker: () -> Unit,
+    onOpenKeyboardSettings: () -> Unit,
+) {
+    ScribeCard(testTag = "keyboard-card") {
+        SectionLabel("USING SCRIBE")
+        Text(
+            when {
+                !system.keyboardEnabled ->
+                    "Scribe is not switched on as a keyboard yet."
+                system.keyboardSelected ->
+                    "Scribe is your current keyboard. Tap any text box and hold the microphone."
+                else ->
+                    "Tap a text box in any app, then switch keyboards to Scribe. One tap on " +
+                        "the keyboard icon takes you back afterwards."
+            },
+            color = ScribeTokens.muted,
+            fontSize = 13.sp,
         )
+        Row(horizontalArrangement = Arrangement.spacedBy(ScribeTokens.gapSmall)) {
+            SecondaryButton("Choose keyboard", "choose-keyboard", onClick = onOpenKeyboardPicker)
+            if (!system.keyboardEnabled) {
+                SecondaryButton(
+                    "Keyboard settings",
+                    "keyboard-settings",
+                    onClick = onOpenKeyboardSettings,
+                )
+            }
+        }
     }
 }
 

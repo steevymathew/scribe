@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -22,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import dev.smantics.scribe.dictation.ScribeEngine
 import dev.smantics.scribe.settings.ScribeConfig
+import dev.smantics.scribe.ui.theme.Handedness
 import dev.smantics.scribe.ui.theme.ScribeTheme
 import kotlinx.coroutines.launch
 
@@ -43,9 +45,16 @@ class MainActivity : ComponentActivity() {
         val requestMic = intent?.getBooleanExtra(EXTRA_REQUEST_MIC, false) == true
 
         setContent {
-            val config by engine.settings.config.collectAsState(initial = ScribeConfig())
-            ScribeTheme(handedness = config.handedness) {
-                ScribeApp(engine = engine, config = config, requestMicImmediately = requestMic)
+            // Null until the first read off disk lands. Starting from ScribeConfig()
+            // would mean starting from onboardingComplete = false, so every cold start of
+            // an already-configured app flashed the setup wizard before the home screen:
+            // "still loading" and "never set up" are different states and must not render
+            // the same.
+            val config by engine.settings.config.collectAsState(initial = null)
+            ScribeTheme(handedness = config?.handedness ?: Handedness.RIGHT) {
+                config?.let {
+                    ScribeApp(engine = engine, config = it, requestMicImmediately = requestMic)
+                }
             }
         }
     }
@@ -68,20 +77,34 @@ private fun ScribeApp(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var micGranted by remember { mutableStateOf(engine.hasMicPermission()) }
+
+    // Bumped after every permission answer so the system state is re-read rather than
+    // remembered from composition.
+    var permissionEpoch by remember { mutableIntStateOf(0) }
+    val system = rememberSystemSetupState(permissionEpoch)
 
     val micLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { granted -> micGranted = granted }
+    ) { permissionEpoch++ }
+
+    val requestMic: () -> Unit = {
+        if (system.micPermanentlyDenied) {
+            // Android has stopped showing the dialog. Launching the request again would
+            // do nothing at all and say nothing about why, which is how a setup screen
+            // becomes a room with no doors.
+            context.openAppPermissionSettings()
+        } else {
+            context.recordMicRequested()
+            micLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
 
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { /* A denied notification permission only hides the listening notice. */ }
 
     LaunchedEffect(requestMicImmediately) {
-        if (requestMicImmediately && !micGranted) {
-            micLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        }
+        if (requestMicImmediately && !system.micGranted) requestMic()
     }
 
     // Navigation is a single enum in state rather than a navigation library: there are
@@ -93,8 +116,8 @@ private fun ScribeApp(
     if (!config.onboardingComplete) {
         OnboardingScreen(
             engine = engine,
-            micGranted = micGranted,
-            onRequestMic = { micLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+            system = system,
+            onRequestMic = requestMic,
             onRequestNotifications = {
                 notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             },
@@ -111,8 +134,8 @@ private fun ScribeApp(
                     engine = engine,
                     config = config,
                     state = state,
-                    micGranted = micGranted,
-                    onRequestMic = { micLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+                    system = system,
+                    onRequestMic = requestMic,
                     onOpenKeyboardSettings = { context.openKeyboardSettings() },
                     onOpenKeyboardPicker = { context.showKeyboardPicker() },
                     onOpenModels = { screen = Screen.MODELS },
@@ -128,32 +151,3 @@ private fun ScribeApp(
 }
 
 private enum class Screen { HOME, MODELS, VOCABULARY, HISTORY }
-
-/** Whether Scribe is in the system's list of enabled input methods. */
-fun Context.isScribeEnabled(): Boolean {
-    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-    return imm.enabledInputMethodList.any { it.packageName == packageName }
-}
-
-/** Whether Scribe is the keyboard currently in use. */
-fun Context.isScribeSelected(): Boolean {
-    val current = Settings.Secure.getString(
-        contentResolver,
-        Settings.Secure.DEFAULT_INPUT_METHOD,
-    )
-    return current?.startsWith(packageName) == true
-}
-
-private fun Context.openKeyboardSettings() {
-    runCatching {
-        startActivity(
-            Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
-    }
-}
-
-private fun Context.showKeyboardPicker() {
-    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-    runCatching { imm.showInputMethodPicker() }
-}

@@ -1,6 +1,7 @@
 package dev.smantics.scribe.ime
 
 import android.content.Intent
+import android.util.Log
 import android.inputmethodservice.InputMethodService
 import android.os.Build
 import android.view.KeyEvent
@@ -37,6 +38,8 @@ import kotlinx.coroutines.launch
  * this view is destroyed and rebuilt every time the Fold is opened or closed.
  */
 class ScribeInputMethodService : InputMethodService() {
+
+    private companion object { const val TAG = "ScribeIME" }
 
     private lateinit var engine: ScribeEngine
     private val host = ImeComposeHost()
@@ -153,18 +156,31 @@ class ScribeInputMethodService : InputMethodService() {
                 false
             }
             if (!switched) {
-                @Suppress("DEPRECATION")
-                (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
-                    .showInputMethodPicker()
+                runCatching {
+                    @Suppress("DEPRECATION")
+                    (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                        .showInputMethodPicker()
+                }.onFailure { Log.w(TAG, "could not show the keyboard picker", it) }
             }
         }
 
+        /**
+         * Open Scribe so the user can grant the microphone.
+         *
+         * Wrapped, because starting an Activity from an input method runs into
+         * background-activity-start rules that vary by Android version and by OEM. If the
+         * system refuses, the exception would otherwise propagate out of a click handler
+         * and take the whole keyboard down — turning "I could not open the app" into "my
+         * keyboard crashed", which is a far worse failure than the one it came from.
+         */
         override fun openApp() {
             val intent = Intent(this@ScribeInputMethodService, MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 putExtra(MainActivity.EXTRA_REQUEST_MIC, true)
             }
-            startActivity(intent)
+            runCatching { startActivity(intent) }.onFailure {
+                Log.w(TAG, "could not open Scribe from the keyboard", it)
+            }
         }
     }
 }

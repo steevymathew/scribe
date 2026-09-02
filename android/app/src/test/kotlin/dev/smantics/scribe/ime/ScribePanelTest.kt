@@ -114,7 +114,14 @@ class ScribePanelTest {
     }
 
     @Test fun `the boost badge appears only when high accuracy is armed`() {
-        panel(EngineState(status = DictationStatus.READY, statusDetail = "Ready", boostActive = true))
+        panel(
+            EngineState(
+                status = DictationStatus.READY,
+                statusDetail = "Ready",
+                boostActive = true,
+                heavyModelAvailable = true,
+            ),
+        )
         compose.onNodeWithText("HD").assertIsDisplayed()
     }
 
@@ -178,11 +185,35 @@ class ScribePanelTest {
         )
     }
 
-    @Test fun `boost is reachable from the panel`() {
+    @Test fun `boost is reachable once the high-accuracy model is installed`() {
         val actions = RecordingActions()
-        panel(actions = actions)
+        panel(
+            EngineState(
+                status = DictationStatus.READY,
+                statusDetail = "Ready",
+                heavyModelAvailable = true,
+            ),
+            actions,
+        )
         compose.onNodeWithTag("boost-button").performClick()
         assertEquals(listOf("boost:true"), actions.calls)
+    }
+
+    /**
+     * On a fresh install the high-accuracy model is a 190 MB download that has not
+     * happened. Arming it would confirm a capability the app can see it does not have, and
+     * the user would find out only after speaking.
+     */
+    @Test fun `boost does nothing until its model is on the device`() {
+        val actions = RecordingActions()
+        panel(actions = actions)   // heavyModelAvailable defaults to false
+        compose.onNodeWithTag("boost-button").performClick()
+        assertTrue("boost must not arm without its model", actions.calls.isEmpty())
+        compose.onAllNodesWithContentDescription(
+            "High accuracy needs the Small model — get it in Scribe",
+        ).fetchSemanticsNodes().let {
+            assertTrue("the reason must be readable by a screen reader", it.isNotEmpty())
+        }
     }
 
     // ------------------------------------------------------------ accessibility

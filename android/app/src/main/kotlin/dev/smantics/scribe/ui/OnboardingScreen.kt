@@ -20,7 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableIntStateOf
@@ -36,11 +36,15 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.smantics.scribe.core.model.ModelRegistry
+import dev.smantics.scribe.dictation.EngineState
 import dev.smantics.scribe.dictation.ScribeEngine
+import dev.smantics.scribe.model.ModelState
 import dev.smantics.scribe.ui.components.Glyph
 import dev.smantics.scribe.ui.components.GlyphName
 import dev.smantics.scribe.ui.components.GhostButton
 import dev.smantics.scribe.ui.components.PrimaryButton
+import dev.smantics.scribe.ui.components.SecondaryButton
 import dev.smantics.scribe.ui.components.Waveform
 import dev.smantics.scribe.ui.theme.DictationStatus
 import dev.smantics.scribe.ui.theme.ScribeTokens
@@ -61,19 +65,23 @@ import dev.smantics.scribe.ui.theme.ScribeTokens
 @Composable
 fun OnboardingScreen(
     engine: ScribeEngine,
-    micGranted: Boolean,
+    system: SystemSetupState,
     onRequestMic: () -> Unit,
     onRequestNotifications: () -> Unit,
     onOpenKeyboardSettings: () -> Unit,
     onFinish: () -> Unit,
 ) {
     var step by remember { mutableIntStateOf(0) }
-    val context = LocalContext.current
     val state by engine.state.collectAsState()
+    val keyboardEnabled = system.keyboardEnabled
 
-    // Re-checked every time this screen recomposes after the user comes back from the
-    // system settings, so the step cannot claim success it has not observed.
-    val keyboardEnabled = context.isScribeEnabled()
+    // The microphone step shows a live level so the user can see Scribe hearing them.
+    // A meter that cannot move would be the worst possible first impression for a
+    // dictation app: it is indistinguishable from a broken microphone.
+    DisposableEffect(step, system.micGranted) {
+        if (step == MIC_STEP && system.micGranted) engine.startLevelPreview()
+        onDispose { engine.stopLevelPreview() }
+    }
 
     Column(
         Modifier
@@ -87,14 +95,21 @@ fun OnboardingScreen(
 
         when (step) {
             0 -> WelcomeStep()
-            1 -> MicrophoneStep(
-                granted = micGranted,
+            MIC_STEP -> MicrophoneStep(
+                granted = system.micGranted,
+                permanentlyDenied = system.micPermanentlyDenied,
                 level = state.level,
                 onRequest = onRequestMic,
             )
             2 -> KeyboardStep(enabled = keyboardEnabled, onOpen = onOpenKeyboardSettings)
             3 -> ModesStep()
-            else -> DoneStep(onRequestNotifications)
+            else -> DoneStep(
+                state = state,
+                heavyModelInstalled = remember {
+                    engine.models.state(ModelRegistry.SHARP) is ModelState.Installed
+                },
+                onRequestNotifications = onRequestNotifications,
+            )
         }
 
         Spacer(Modifier.height(ScribeTokens.gapLarge))
@@ -111,7 +126,7 @@ fun OnboardingScreen(
             val lastStep = step >= 4
             PrimaryButton(
                 label = if (lastStep) "Start dictating" else "Next",
-                enabled = canAdvance(step, micGranted, keyboardEnabled),
+                enabled = canAdvance(step, system),
                 testTag = "onboarding-next",
             ) {
                 if (lastStep) onFinish() else step++
@@ -120,31 +135,49 @@ fun OnboardingScreen(
 
         // Never a blocked button with no explanation: if Next is disabled, the reason is
         // written next to it.
-        BlockedReason(step, micGranted, keyboardEnabled)
+        BlockedReason(step, system)
     }
 }
 
+/** The microphone step's index, named because three places depend on it. */
+private const val MIC_STEP = 1
+
 /**
- * The microphone step is the only hard gate. The keyboard step can be skipped and revisited
- * from the home screen, because some people prefer to enable it from the system settings in
- * their own time and a wizard that refuses to end is worse than one that trusts them.
+ * The microphone step gates the wizard — but only while Android is still willing to ask.
+ *
+ * Once the permission has been refused twice the system stops showing the dialog and
+ * silently answers "denied", at which point holding the wizard shut would trap the user in
+ * two screens with no exit and an inert button. So the gate lifts, the button changes to
+ * one that opens Scribe's settings page, and the outstanding item moves to the home
+ * screen's checklist where it can be dealt with at any time.
+ *
+ * The keyboard step never gates: some people prefer to enable it in their own time, and a
+ * wizard that refuses to end is worse than one that trusts them.
  */
-private fun canAdvance(step: Int, micGranted: Boolean, keyboardEnabled: Boolean): Boolean =
+private fun canAdvance(step: Int, system: SystemSetupState): Boolean =
     when (step) {
-        1 -> micGranted
+        MIC_STEP -> system.micGranted || system.micPermanentlyDenied
         else -> true
     }
 
 @Composable
-private fun BlockedReason(step: Int, micGranted: Boolean, keyboardEnabled: Boolean) {
+private fun BlockedReason(step: Int, system: SystemSetupState) {
+    val blocked = !canAdvance(step, system)
     val reason = when {
-        step == 1 && !micGranted ->
+        step == MIC_STEP && blocked ->
             "Scribe needs the microphone before it can transcribe anything."
-        step == 2 && !keyboardEnabled ->
-            "You can turn the keyboard on later from the Scribe home screen."
+        step == MIC_STEP && system.micPermanentlyDenied ->
+            "You can carry on without it, but Scribe cannot transcribe until the " +
+                "microphone is allowed."
+        step == 2 && !system.keyboardEnabled ->
+            "Not now? You can turn the keyboard on later from the Scribe home screen."
         else -> null
     } ?: return
-    Text(reason, color = ScribeTokens.muted, fontSize = 13.sp)
+    Text(
+        reason,
+        color = if (blocked) ScribeTokens.warn else ScribeTokens.muted,
+        fontSize = 13.sp,
+    )
 }
 
 @Composable
@@ -210,20 +243,29 @@ private fun WelcomeStep() {
 }
 
 @Composable
-private fun MicrophoneStep(granted: Boolean, level: Float, onRequest: () -> Unit) {
+private fun MicrophoneStep(
+    granted: Boolean,
+    permanentlyDenied: Boolean,
+    level: Float,
+    onRequest: () -> Unit,
+) {
     StepBody(
         title = "Microphone",
-        body = if (granted) {
-            "Say something — the bars should move."
-        } else {
-            "Scribe records only while you hold the button, and the audio never leaves " +
-                "this phone."
+        body = when {
+            granted -> "Say something — the bars should move."
+            permanentlyDenied -> "Android has stopped asking, so this has to be switched " +
+                "on in Scribe's settings."
+            else -> "Scribe records only while you hold the button, and the audio never " +
+                "leaves this phone."
         },
     ) {
         if (granted) {
+            // Live, not decorative: the level is coming from a real capture opened for
+            // this step only. If these bars do not move, the microphone is the problem
+            // and the user finds out here rather than mid-sentence.
             Waveform(
                 level = level,
-                status = if (level > 0f) DictationStatus.RECORDING else DictationStatus.READY,
+                status = DictationStatus.RECORDING,
                 boostActive = false,
             )
             Row(
@@ -234,7 +276,12 @@ private fun MicrophoneStep(granted: Boolean, level: Float, onRequest: () -> Unit
                 Text("Microphone allowed", color = ScribeTokens.good, fontSize = 13.sp)
             }
         } else {
-            PrimaryButton("Allow the microphone", enabled = true, testTag = "allow-mic", onClick = onRequest)
+            PrimaryButton(
+                label = if (permanentlyDenied) "Open Scribe's settings" else "Allow the microphone",
+                enabled = true,
+                testTag = "allow-mic",
+                onClick = onRequest,
+            )
         }
     }
 }
@@ -310,20 +357,70 @@ private fun ModeExplainer(label: String, description: String, example: String) {
     }
 }
 
+/**
+ * The last step reports the engine's real state rather than asserting readiness.
+ *
+ * Staging the bundled model and loading it happen on a background thread while the wizard
+ * runs. If either failed, a screen headed "Ready" would be the interface stating something
+ * it has not checked — and the user would be sent to dictate with no engine and no idea
+ * why nothing happens.
+ */
 @Composable
-private fun DoneStep(onRequestNotifications: () -> Unit) {
-    LaunchedEffect(Unit) { onRequestNotifications() }
+private fun DoneStep(
+    state: EngineState,
+    heavyModelInstalled: Boolean,
+    onRequestNotifications: () -> Unit,
+) {
+    val ready = state.status == DictationStatus.READY
     StepBody(
-        title = "Ready",
-        body = "Tap a text box anywhere, switch to the Scribe keyboard, and hold the " +
-            "microphone.",
+        title = when (state.status) {
+            DictationStatus.ERROR -> "Something went wrong"
+            DictationStatus.READY -> "Ready"
+            else -> "Nearly there"
+        },
+        body = when (state.status) {
+            DictationStatus.ERROR -> state.statusDetail
+            DictationStatus.READY ->
+                "Tap a text box anywhere, switch to the Scribe keyboard, and hold the " +
+                    "microphone."
+            else -> "Getting the speech model ready…"
+        },
     ) {
+        if (state.status == DictationStatus.ERROR) {
+            Text(
+                "You can still finish setup — Settings → Models has the recovery options.",
+                color = ScribeTokens.muted,
+                fontSize = 13.sp,
+            )
+        }
+        if (ready && heavyModelInstalled) {
+            Text(
+                "The bolt beside the microphone turns on the high-accuracy model for names " +
+                    "and technical words.",
+                color = ScribeTokens.muted,
+                fontSize = 13.sp,
+            )
+        } else if (ready) {
+            // Do not promise the high-accuracy model on a fresh install: it is a 190 MB
+            // download that is not there yet, and finding that out mid-sentence — on a
+            // plane, which is exactly why someone chose an offline dictation app — is a
+            // promise made in setup and broken on the first try.
+            Text(
+                "A more accurate model is available in Settings → Models when you want it.",
+                color = ScribeTokens.muted,
+                fontSize = 13.sp,
+            )
+        }
+
+        // Asked for explicitly rather than sprung as a dialog on a screen that says
+        // "Ready". Scribe's whole pitch is that it asks for as little as possible.
         Text(
-            "The bolt beside the microphone turns on the high-accuracy model for names and " +
-                "technical words. Everything else lives in Settings.",
+            "Scribe shows a notice while the microphone is open, so you always know when " +
+                "it is listening.",
             color = ScribeTokens.muted,
             fontSize = 13.sp,
         )
+        SecondaryButton("Allow that notice", "allow-notifications", onClick = onRequestNotifications)
     }
 }
 

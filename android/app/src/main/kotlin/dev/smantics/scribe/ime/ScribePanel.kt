@@ -265,34 +265,56 @@ private fun MicRow(state: EngineState, actions: PanelActions) {
 
         // Boost, parked beside the mic so it is reachable with the same hand.
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-            BoostButton(active = state.boostActive, onChange = actions::setBoost)
+            BoostButton(
+                active = state.boostActive,
+                available = state.heavyModelAvailable,
+                onChange = actions::setBoost,
+            )
         }
     }
 }
 
+/**
+ * High accuracy, and honesty about whether it is available.
+ *
+ * On a fresh install the high-accuracy model is a 190 MB download that has not happened.
+ * A bolt that lights up anyway would confirm a capability the app can trivially see it
+ * does not have, and the user would only discover otherwise after speaking — which, for
+ * someone who chose an offline dictation app precisely so it would work on a plane, is the
+ * worst possible moment to find out.
+ */
 @Composable
-private fun BoostButton(active: Boolean, onChange: (Boolean) -> Unit) {
+private fun BoostButton(active: Boolean, available: Boolean, onChange: (Boolean) -> Unit) {
     Box(
         Modifier
             .testTag("boost-button")
             .size(48.dp)
             .clip(CircleShape)
-            .background(if (active) ScribeTokens.warn.copy(alpha = 0.18f) else ScribeTokens.s1)
+            .background(
+                if (active && available) ScribeTokens.warn.copy(alpha = 0.18f) else ScribeTokens.s1,
+            )
             .border(
                 1.dp,
-                if (active) ScribeTokens.warn.copy(alpha = 0.5f) else ScribeTokens.stroke,
+                if (active && available) ScribeTokens.warn.copy(alpha = 0.5f) else ScribeTokens.stroke,
                 CircleShape,
             )
             .semantics {
-                contentDescription =
-                    if (active) "High accuracy on" else "Turn on high accuracy"
+                contentDescription = when {
+                    !available -> "High accuracy needs the Small model — get it in Scribe"
+                    active -> "High accuracy on"
+                    else -> "Turn on high accuracy"
+                }
             }
-            .clickable { onChange(!active) },
+            .clickable(enabled = available) { onChange(!active) },
         contentAlignment = Alignment.Center,
     ) {
         Glyph(
             GlyphName.BOLT,
-            if (active) ScribeTokens.warn else ScribeTokens.faint,
+            when {
+                !available -> ScribeTokens.faint.copy(alpha = 0.4f)
+                active -> ScribeTokens.warn
+                else -> ScribeTokens.faint
+            },
             size = 20.dp,
             thickness = 1.8.dp,
         )
