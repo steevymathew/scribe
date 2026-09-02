@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/scribe_bench.dir/test/scribe_bench.cpp.o -o scribe_bench  whisper.cpp/src/libwhisper.a whisper.cpp/ggml/src/libggml.a -ldl whisper.cpp/ggml/src/libggml-cpu.a whisper.cpp/ggml/src/libggml-base.a -lm 

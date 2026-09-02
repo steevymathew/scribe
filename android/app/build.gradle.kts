@@ -150,6 +150,12 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    // Robolectric runs the Android framework on this machine's JVM. There is no Android
+    // emulator for an aarch64 Linux host, so this is the only way the keyboard's
+    // lifecycle and the panel's user flows get exercised automatically at all.
     testImplementation("org.robolectric:robolectric:4.13")
     testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.test.ext:junit:1.2.1")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
