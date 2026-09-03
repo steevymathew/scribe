@@ -67,15 +67,19 @@ object KeyboardLayout {
             listOf(Key.Backspace),
     )
 
-    /** The bottom row is the same shape in every layer. */
+    /**
+     * The bottom row of the letters, the same shape in every layer.
+     *
+     * Space, enter, backspace, the microphone and the keyboard switcher are **not** here:
+     * they live in the utility bar below, which is present whether or not the letters are
+     * showing. Duplicating them would mean two of each on screen at once, and one of them
+     * disappearing whenever the keys were put away.
+     */
     val bottomRow: List<Key> = listOf(
         Key.Layer,
         Key.Char(",", ","),
-        Key.Mic,
         Key.Space,
         Key.Char(".", "."),
-        Key.Enter,
-        Key.SwitchIme,
     )
 
     fun rowsFor(layer: KeyboardLayer, shift: ShiftState): List<List<Key>> = when {

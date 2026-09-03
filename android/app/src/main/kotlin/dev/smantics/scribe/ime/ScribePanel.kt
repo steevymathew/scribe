@@ -1,5 +1,6 @@
 package dev.smantics.scribe.ime
 
+import android.view.HapticFeedbackConstants
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -36,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -100,72 +102,227 @@ fun ScribePanel(
     var layer by remember { mutableStateOf(KeyboardLayer.LETTERS) }
     var shift by remember { mutableStateOf(ShiftState.OFF) }
 
-    Column(
-        modifier
-            .fillMaxWidth()
-            .background(ScribeTokens.bg)
-            .padding(horizontal = 6.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        if (state.status == DictationStatus.NEEDS_PERMISSION) {
-            PermissionRow(onOpenApp = actions::openApp)
-        } else {
-            VoiceStrip(state, actions)
+    // Voice is the primary mode, so the letters start away. This is the whole point of a
+    // dictation keyboard: most of the time it should be a microphone and a transcript, not
+    // a wall of keys sitting under text nobody is typing.
+    var keysShown by remember { mutableStateOf(false) }
+
+    // How much of the width the panel takes. A dictation panel does not need a full
+    // keyboard's footprint, and on an 8-inch inner display a full-width one is absurd.
+    var widthStep by remember { mutableStateOf(PanelWidth.FULL) }
+
+    val dictating = state.stage != DictationStage.IDLE
+    val alignment = if (LocalHandedness.current == Handedness.LEFT) {
+        Alignment.CenterStart
+    } else {
+        Alignment.CenterEnd
+    }
+
+    Box(modifier.fillMaxWidth().background(ScribeTokens.bg), contentAlignment = alignment) {
+        Column(
+            Modifier
+                .fillMaxWidth(widthStep.fraction)
+                .padding(horizontal = 6.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (state.status == DictationStatus.NEEDS_PERMISSION) {
+                PermissionRow(onOpenApp = actions::openApp)
+            } else {
+                VoiceStrip(state, actions)
+
+                AnimatedVisibility(
+                    visible = dictating,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut(),
+                ) {
+                    TranscriptReveal(
+                        stage = state.stage,
+                        partialText = state.partialText,
+                        diff = state.diff,
+                        finalText = state.finalText,
+                        modifier = Modifier.padding(horizontal = 2.dp),
+                    )
+                }
+            }
+
+            // The letters go away while dictating. None of them do anything useful with a
+            // microphone open, and the space is worth more to the transcript.
             AnimatedVisibility(
-                visible = state.stage != DictationStage.IDLE,
+                visible = keysShown && !dictating,
                 enter = expandVertically() + fadeIn(),
                 exit = shrinkVertically() + fadeOut(),
             ) {
-                TranscriptReveal(
-                    stage = state.stage,
-                    partialText = state.partialText,
-                    diff = state.diff,
-                    finalText = state.finalText,
-                    modifier = Modifier.padding(horizontal = 2.dp),
+                Keys(
+                    layer = layer,
+                    shift = shift,
+                    state = state,
+                    actions = actions,
+                    onLayer = {
+                        layer = if (layer == KeyboardLayer.LETTERS) {
+                            KeyboardLayer.SYMBOLS
+                        } else {
+                            KeyboardLayer.LETTERS
+                        }
+                        shift = ShiftState.OFF
+                    },
+                    onShift = {
+                        shift = when (shift) {
+                            ShiftState.OFF -> ShiftState.ONCE
+                            ShiftState.ONCE -> ShiftState.LOCKED
+                            ShiftState.LOCKED -> ShiftState.OFF
+                        }
+                    },
+                    onTypedCharacter = {
+                        // One-shot shift releases after a single letter, as every other
+                        // keyboard behaves. Caps lock does not.
+                        if (shift == ShiftState.ONCE) shift = ShiftState.OFF
+                    },
                 )
             }
-        }
 
-        Keys(
-            layer = layer,
-            shift = shift,
-            state = state,
-            actions = actions,
-            onLayer = {
-                layer = if (layer == KeyboardLayer.LETTERS) {
-                    KeyboardLayer.SYMBOLS
+            UtilityBar(
+                keysShown = keysShown,
+                widthStep = widthStep,
+                dictating = dictating,
+                actions = actions,
+                onToggleKeys = { keysShown = !keysShown },
+                onCycleWidth = { widthStep = widthStep.next() },
+            )
+        }
+    }
+}
+
+/** How wide the panel is. Cycled by the resize control, not buried in settings. */
+private enum class PanelWidth(val fraction: Float, val label: String) {
+    FULL(1f, "Full width"),
+    WIDE(0.86f, "Slightly narrower"),
+    COMPACT(0.68f, "Compact"),
+    ;
+
+    fun next(): PanelWidth = entries[(ordinal + 1) % entries.size]
+}
+
+/**
+ * The row that is always there: enter, the keyboard toggle, and the size control.
+ *
+ * These are the things you need whether or not the letters are showing, which is why they
+ * live below both rather than inside the QWERTY's bottom row.
+ */
+@Composable
+private fun UtilityBar(
+    keysShown: Boolean,
+    widthStep: PanelWidth,
+    dictating: Boolean,
+    actions: PanelActions,
+    onToggleKeys: () -> Unit,
+    onCycleWidth: () -> Unit,
+) {
+    val haptics = rememberKeyHaptics()
+    Row(
+        Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        UtilityKey(
+            glyph = if (keysShown) GlyphName.KEYBOARD_HIDE else GlyphName.KEYBOARD,
+            description = if (keysShown) "Hide the letters" else "Show the letters",
+            weight = 1.4f,
+            active = keysShown,
+        ) { haptics(); onToggleKeys() }
+
+        UtilityKey(GlyphName.BACKSPACE, "Backspace", 1f, enabled = !dictating) {
+            haptics(); actions.backspace()
+        }
+        UtilityKey(GlyphName.SPACE, "Space", 2f, enabled = !dictating) {
+            haptics(); actions.space()
+        }
+        UtilityKey(GlyphName.RETURN, "Enter", 1.2f, enabled = !dictating) {
+            haptics(); actions.enter()
+        }
+        UtilityKey(GlyphName.RESIZE, widthStep.label, 1f) { haptics(); onCycleWidth() }
+
+        // Back to whichever keyboard was in use before Scribe. Labelled plainly, because
+        // an unexplained keyboard icon in the corner is a button nobody dares press.
+        UtilityKey(GlyphName.GRIP, "Switch to another keyboard", 1f) {
+            haptics(); actions.switchKeyboard()
+        }
+    }
+}
+
+@Composable
+private fun RowScope.UtilityKey(
+    glyph: GlyphName,
+    description: String,
+    weight: Float,
+    active: Boolean = false,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .testTag("util-$description")
+            .weight(weight)
+            .height(42.dp)
+            .then(
+                if (active) {
+                    Modifier.neuActive(RoundedCornerShape(ScribeTokens.radiusChip), ScribeTokens.accent)
                 } else {
-                    KeyboardLayer.LETTERS
-                }
-                shift = ShiftState.OFF
+                    Modifier.neuInset(RoundedCornerShape(ScribeTokens.radiusChip), depth = 0.7f)
+                },
+            )
+            .semantics { contentDescription = description }
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Glyph(
+            glyph,
+            when {
+                !enabled -> ScribeTokens.faint.copy(alpha = 0.35f)
+                active -> ScribeTokens.accent
+                else -> ScribeTokens.muted
             },
-            onShift = {
-                shift = when (shift) {
-                    ShiftState.OFF -> ShiftState.ONCE
-                    ShiftState.ONCE -> ShiftState.LOCKED
-                    ShiftState.LOCKED -> ShiftState.OFF
-                }
-            },
-            onTypedCharacter = {
-                // One-shot shift releases after a single letter, as every other keyboard
-                // behaves. Caps lock does not.
-                if (shift == ShiftState.ONCE) shift = ShiftState.OFF
-            },
+            size = 19.dp,
+            thickness = 1.7.dp,
         )
     }
 }
 
 /**
- * The dictation controls: waveform, mode, microphone.
+ * A short tick of haptic feedback for every press.
  *
- * While an utterance is being finished the strip grows a discard control, so the reveal
- * can be thrown away rather than only waited out.
+ * A touch keyboard without it feels broken in a way that is hard to name — there is no
+ * travel, no click, and no confirmation that the tap registered at all until the character
+ * appears. `KEYBOARD_TAP` is the system's own keypress effect, so Scribe feels like the
+ * keyboard the user already has rather than inventing its own vocabulary.
+ */
+@Composable
+private fun rememberKeyHaptics(): () -> Unit {
+    val view = LocalView.current
+    return remember(view) {
+        {
+            view.performHapticFeedback(
+                HapticFeedbackConstants.KEYBOARD_TAP,
+                HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING,
+            )
+            Unit
+        }
+    }
+}
+
+/**
+ * The dictation controls: waveform, mode, and the one big button.
+ *
+ * While listening, that button turns into **insert** — an arrow dropping onto a line —
+ * because it is the control the user's finger is already on. Making them hunt for a
+ * separate "done" elsewhere in the panel is the thing that made the first version feel
+ * like a puzzle; the button that started the recording is the button that finishes it.
  */
 @Composable
 private fun VoiceStrip(state: EngineState, actions: PanelActions) {
+    val haptics = rememberKeyHaptics()
     val toggleFirst = LocalHandedness.current == Handedness.LEFT
     val listening = state.stage == DictationStage.LISTENING
-    val finishing = state.stage != DictationStage.IDLE && !listening
+    val busy = state.stage != DictationStage.IDLE
 
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(
@@ -173,37 +330,38 @@ private fun VoiceStrip(state: EngineState, actions: PanelActions) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            AnimatedVisibility(visible = finishing) {
+            AnimatedVisibility(visible = busy) {
                 RoundControl(
-                    glyph = GlyphName.BACKSPACE,
-                    description = "Discard this dictation",
+                    glyph = GlyphName.CLOSE,
+                    description = "Discard what I said",
                     testTag = "voice-cancel",
                     tint = ScribeTokens.rec,
-                    onClick = actions::cancelDictation,
-                )
+                ) { haptics(); actions.cancelDictation() }
             }
 
             if (toggleFirst) {
                 ModeToggle(state.mode, enabled = true, onToggle = actions::toggleMode)
                 Waveform(
-                    state.level, state.status, state.boostActive,
+                    state.level, state.stage, state.boostActive,
                     Modifier.weight(1f), height = 32.dp, barCount = 20,
                 )
             } else {
                 Waveform(
-                    state.level, state.status, state.boostActive,
+                    state.level, state.stage, state.boostActive,
                     Modifier.weight(1f), height = 32.dp, barCount = 20,
                 )
                 ModeToggle(state.mode, enabled = true, onToggle = actions::toggleMode)
             }
 
-            MicToggle(state, actions::toggleDictation)
-            BoostButton(state.boostActive, state.heavyModelAvailable, actions::setBoost)
+            MicToggle(state) { haptics(); actions.toggleDictation() }
+            BoostButton(state.boostActive, state.heavyModelAvailable) { held ->
+                haptics(); actions.setBoost(held)
+            }
         }
 
-        // Status goes under the strip, not beside it: the strip is already several
-        // controls wide on a cover screen, and an error must never be what gets truncated.
-        if (state.stage == DictationStage.IDLE) {
+        // Status sits under the strip, not beside it: the strip is already several controls
+        // wide on a cover screen, and an error must never be what gets truncated.
+        if (!busy) {
             Text(
                 text = state.statusDetail,
                 color = if (state.error != null) ScribeTokens.rec else ScribeTokens.faint,
@@ -215,15 +373,21 @@ private fun VoiceStrip(state: EngineState, actions: PanelActions) {
 }
 
 /**
- * Start and stop dictating.
+ * Start dictating, then insert what was said.
  *
- * A toggle, not press-and-hold. Holding is precise, but it occupies the hand holding the
- * phone and it makes a live transcript pointless — there is no reading what is being heard
- * while a thumb is pinned to a button.
+ * One control, two jobs, in the same place — a microphone when idle, an insert arrow while
+ * listening. A toggle rather than press-and-hold: holding occupies the hand that is holding
+ * the phone, and it makes the live transcript pointless, since there is no reading what is
+ * being heard with a thumb pinned to a button.
+ *
+ * While the transcript is being finished the control is busy rather than interactive, and
+ * says so — pressing it again mid-decode would be ambiguous at best.
  */
 @Composable
 private fun MicToggle(state: EngineState, onToggle: () -> Unit) {
     val listening = state.stage == DictationStage.LISTENING
+    val finishing = state.stage != DictationStage.IDLE && !listening
+
     val transition = rememberInfiniteTransition(label = "mic")
     val pulse by transition.animateFloat(
         initialValue = 1f,
@@ -235,27 +399,37 @@ private fun MicToggle(state: EngineState, onToggle: () -> Unit) {
         label = "mic-pulse",
     )
 
+    val tint = when {
+        listening -> ScribeTokens.accent
+        finishing -> ScribeTokens.warn
+        else -> statusColor(state.status)
+    }
+
     Box(
         Modifier
             .testTag("mic-button")
             .size(52.dp)
             .scale(if (listening) pulse else 1f)
             .then(
-                if (listening) {
-                    Modifier.neuActive(CircleShape, ScribeTokens.rec)
-                } else {
-                    Modifier.neuRaised(CircleShape)
+                when {
+                    listening -> Modifier.neuActive(CircleShape, ScribeTokens.accent)
+                    finishing -> Modifier.neuInset(CircleShape, depth = 0.8f)
+                    else -> Modifier.neuRaised(CircleShape)
                 },
             )
             .semantics {
-                contentDescription = if (listening) "Stop dictating" else "Start dictating"
+                contentDescription = when {
+                    listening -> "Insert what I said"
+                    finishing -> "Working on it"
+                    else -> "Start dictating"
+                }
             }
-            .clickable(onClick = onToggle),
+            .clickable(enabled = !finishing, onClick = onToggle),
         contentAlignment = Alignment.Center,
     ) {
         Glyph(
-            GlyphName.MIC,
-            if (listening) ScribeTokens.rec else statusColor(state.status),
+            if (listening) GlyphName.INSERT else GlyphName.MIC,
+            tint,
             size = 24.dp,
             thickness = 2.dp,
         )
@@ -410,6 +584,7 @@ private fun RowScope.KeyButton(
             .semantics { contentDescription = description }
             .keyGestures(
                 key = key,
+                haptics = rememberKeyHaptics(),
                 actions = actions,
                 onLayer = onLayer,
                 onShift = onShift,
@@ -459,6 +634,7 @@ private fun RowScope.KeyButton(
  */
 private fun Modifier.keyGestures(
     key: Key,
+    haptics: () -> Unit,
     actions: PanelActions,
     onLayer: () -> Unit,
     onShift: () -> Unit,
@@ -468,6 +644,7 @@ private fun Modifier.keyGestures(
     detectTapGestures(
         onPress = {
             if (key !is Key.Backspace) return@detectTapGestures
+            haptics()
             actions.backspace()
             // Still held after the threshold? Switch to whole words until the finger lifts.
             val liftedEarly = withTimeoutOrNull(REPEAT_DELAY_MS) { tryAwaitRelease() }
@@ -481,6 +658,7 @@ private fun Modifier.keyGestures(
             }
         },
         onTap = {
+            haptics()
             when (key) {
                 is Key.Char -> onCharacter()
                 is Key.Shift -> onShift()

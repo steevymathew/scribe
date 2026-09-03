@@ -260,6 +260,33 @@ class CleanPipelineTest {
         assertEquals(text, clean(text))
     }
 
+    /**
+     * The form people actually use. Formatting a spoken list was one of the things that
+     * seemed to need a cloud model; said explicitly, it is a rule.
+     */
+    @Test fun `an explicit list instruction formats what follows`() {
+        assertEquals(
+            "- Eggs\n- Milk\n- Bread",
+            clean("bullet list eggs, milk, bread"),
+        )
+        assertEquals(
+            "1. Book the room\n2. Send the invite\n3. Order lunch",
+            clean("make a numbered list book the room, send the invite, order lunch"),
+        )
+    }
+
+    @Test fun `number one and number two make a list`() {
+        assertEquals(
+            "1. Call the bank.\n2. Cancel the card",
+            clean("number one call the bank. number two cancel the card"),
+        )
+    }
+
+    /** One item is not a list, and must not be mangled into one. */
+    @Test fun `a list instruction with a single item is left alone`() {
+        assertTrue(clean("bullet list eggs").contains("eggs"))
+    }
+
     @Test fun `spoken bullets become a bulleted list`() {
         val out = clean("bullet point milk bullet point eggs bullet point bread")
         assertEquals("- Milk\n- Eggs\n- Bread", out)

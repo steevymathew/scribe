@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,14 +67,22 @@ fun TranscriptReveal(
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        // Follows the tail. A live transcript that starts at the top and needs scrolling
+        // to see the words arriving is a transcript nobody reads — the newest word is the
+        // only one that matters while speaking. Scrolling up to review still works; it
+        // simply is not where the box parks itself.
+        val scroll = rememberScrollState()
+        val body = textFor(stage, partialText, diff, finalText)
+        LaunchedEffect(body.text, stage) { scroll.animateScrollTo(scroll.maxValue) }
+
         Box(
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = 40.dp, max = 108.dp)
-                .verticalScroll(rememberScrollState()),
+                .heightIn(min = 44.dp, max = 120.dp)
+                .verticalScroll(scroll),
         ) {
             Text(
-                text = textFor(stage, partialText, diff, finalText),
+                text = body,
                 fontSize = 15.sp,
                 lineHeight = 21.sp,
                 color = ScribeTokens.text,
@@ -96,6 +105,12 @@ private fun textFor(
     // decided yet — showing a cleanup mid-sentence would keep changing under the reader.
     DictationStage.LISTENING -> AnnotatedString(
         partialText.ifEmpty { "Listening…" },
+    )
+
+    // The microphone is shut and the decoder is running. The last live text stays on
+    // screen so the box does not blank out at the very moment the user is waiting.
+    DictationStage.TRANSCRIBING -> AnnotatedString(
+        partialText.ifEmpty { "Working on it…" },
     )
 
     // The raw text with the removals struck through, so the deletions are visible before
@@ -137,6 +152,7 @@ private fun textFor(
 private fun StageLabel(stage: DictationStage) {
     val (label, colour) = when (stage) {
         DictationStage.LISTENING -> "LISTENING" to ScribeTokens.rec
+        DictationStage.TRANSCRIBING -> "TRANSCRIBING" to ScribeTokens.warn
         DictationStage.CLEANING -> "CLEANING IT UP" to ScribeTokens.muted
         DictationStage.PUNCTUATING -> "ADDING PUNCTUATION" to ScribeTokens.warn
         DictationStage.FINAL -> "READY TO INSERT" to ScribeTokens.good
@@ -148,7 +164,7 @@ private fun StageLabel(stage: DictationStage) {
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (stage == DictationStage.LISTENING) {
+        if (stage == DictationStage.LISTENING || stage == DictationStage.TRANSCRIBING) {
             val transition = rememberInfiniteTransition(label = "listening")
             val alpha by transition.animateFloat(
                 initialValue = 1f,

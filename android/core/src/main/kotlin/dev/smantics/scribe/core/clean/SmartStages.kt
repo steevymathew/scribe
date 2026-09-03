@@ -453,6 +453,22 @@ object DetectLists : CleanStage {
     )
 
     /**
+     * An explicit instruction to make a list, spoken before the items.
+     *
+     * This is the form people actually use — "make a list: eggs, milk, bread" — and it is
+     * the one thing a rule can do that a cloud model was previously needed for. Everything
+     * after the instruction is split on its separators and becomes items.
+     */
+    private val LIST_COMMAND = Regex(
+        """^\s*(?:make (?:it |this )?(?:a |into a )?|as a |start a |begin a )?""" +
+            """(bulleted|bullet|numbered|number)\s*(?:point\s*)?list\s*(?:of|with|:|,|-)?\s*""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    /** Item separators inside a spoken list. */
+    private val SEPARATOR = Regex("""\s*(?:,|;|\band\b|\bthen\b)\s*""", RegexOption.IGNORE_CASE)
+
+    /**
      * The sentence boundary before a marker is captured rather than consumed — eating it
      * would strip the full stop off the previous list item.
      */
@@ -462,13 +478,49 @@ object DetectLists : CleanStage {
         RegexOption.IGNORE_CASE,
     )
 
+    /** "number one … number two …", which people use as often as bare ordinals. */
+    private val NUMBERED_MARKER = Regex(
+        """(^|[.;!?\n])[ \t]*(?<![\p{L}\p{N}])number[ \t]+""" +
+            """(one|two|three|four|five|six|seven|eight|nine|ten|\d{1,2})""" +
+            """(?![\p{L}\p{N}])[ \t]*[,:]?[ \t]*""",
+        RegexOption.IGNORE_CASE,
+    )
+
     override fun apply(text: String, ctx: CleanContext): String {
         if (!ctx.options.detectLists) return text
+
+        // An explicit instruction wins outright — the user said "make a list", so the rest
+        // of the utterance is the list and there is nothing to infer.
+        LIST_COMMAND.find(text)?.let { command ->
+            val bulleted = command.groupValues[1].lowercase().startsWith("bullet")
+            val items = text.substring(command.range.last + 1)
+                .split(SEPARATOR)
+                .map { it.trim().trimEnd('.') }
+                .filter { it.isNotBlank() }
+            if (items.size >= 2) {
+                return items.mapIndexed { index, item ->
+                    if (bulleted) "- $item" else "${index + 1}. $item"
+                }.joinToString("\n")
+            }
+        }
+
         var out = text
 
-        val bullets = BULLET.findAll(out).count()
-        if (bullets >= 2) {
+        if (BULLET.findAll(out).count() >= 2) {
             out = BULLET.replace(out) { "\n- " }
+        }
+
+        var numbered = 0
+        if (NUMBERED_MARKER.findAll(out).count() >= 2) {
+            out = NUMBERED_MARKER.replace(out) { m ->
+                numbered++
+                val boundary = m.groupValues[1]
+                when {
+                    numbered == 1 -> "$boundary$numbered. "
+                    boundary == "\n" -> "\n$numbered. "
+                    else -> "$boundary\n$numbered. "
+                }
+            }
         }
 
         val markers = ORDINAL_MARKER.findAll(out).toList()

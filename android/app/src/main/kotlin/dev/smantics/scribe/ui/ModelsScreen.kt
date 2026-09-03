@@ -97,12 +97,20 @@ fun ModelsScreen(engine: ScribeEngine, config: ScribeConfig, onBack: () -> Unit)
         ScribeCard("polish-models") {
             SectionLabel("CLEAN-UP POLISH")
             Text(
-                "Clean mode works entirely on rules and needs nothing here. A small " +
-                    "language model can additionally smooth awkward phrasing — it runs on " +
-                    "this phone too, and Scribe throws away anything it produces that adds " +
-                    "or changes what you said.",
+                "Clean mode is complete without any of this. The punctuation, the filler " +
+                    "removal, the spoken corrections, the numbers and the lists are all " +
+                    "rules — instant, predictable, and incapable of inventing a word.",
                 color = ScribeTokens.muted,
                 fontSize = 13.sp,
+            )
+            Text(
+                "A small language model can be added on top, but on test it made " +
+                    "transcripts worse about as often as better: at this size a model " +
+                    "rephrases where it should tidy. The cloud tools that format well are " +
+                    "running far larger fine-tuned models in a datacentre, and that gap is " +
+                    "not one a phone closes. Treat this as an experiment.",
+                color = ScribeTokens.warn,
+                fontSize = 12.sp,
             )
             if (!NativeLibs.llmAvailable) {
                 Text(

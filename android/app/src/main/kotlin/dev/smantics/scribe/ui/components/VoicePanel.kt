@@ -84,10 +84,10 @@ fun VoicePanel(
             horizontalArrangement = Arrangement.spacedBy(ScribeTokens.gapSmall),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            StopDot(state, onStop)
+            InsertButton(state, onStop)
             Waveform(
                 level = state.level,
-                status = state.status,
+                stage = state.stage,
                 boostActive = state.boostActive,
                 modifier = Modifier.weight(1f),
                 height = 28.dp,
@@ -161,9 +161,15 @@ private fun MenuRow(label: String, value: String) {
     }
 }
 
-/** The status dot doubles as the stop control, so the panel needs no separate button. */
+/**
+ * Finish, and put the words in the field.
+ *
+ * An arrow dropping onto a line rather than a red dot: a red circle reads as "recording",
+ * not as "press me to finish", and the first version left people looking for a separate
+ * button that did not exist.
+ */
 @Composable
-private fun StopDot(state: EngineState, onStop: () -> Unit) {
+private fun InsertButton(state: EngineState, onStop: () -> Unit) {
     val pulsing = state.status == DictationStatus.RECORDING ||
         state.status == DictationStatus.TRANSCRIBING
     val transition = rememberInfiniteTransition(label = "voice-dot")
@@ -176,20 +182,33 @@ private fun StopDot(state: EngineState, onStop: () -> Unit) {
         ),
         label = "voice-dot-alpha",
     )
+    val listening = state.stage == DictationStage.LISTENING
     Box(
         Modifier
-            .testTag("voice-stop-dot")
-            .size(32.dp)
-            .neuInset(CircleShape, depth = 0.7f)
-            .semantics { contentDescription = "Stop dictating" }
-            .clickable(onClick = onStop),
+            .testTag("voice-insert")
+            .size(38.dp)
+            .then(
+                if (listening) {
+                    Modifier.neuActive(CircleShape, ScribeTokens.accent)
+                } else {
+                    Modifier.neuInset(CircleShape, depth = 0.7f)
+                },
+            )
+            .semantics {
+                contentDescription = if (listening) "Insert what I said" else "Working on it"
+            }
+            .clickable(enabled = listening, onClick = onStop),
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            Modifier
-                .size(11.dp)
-                .clip(CircleShape)
-                .background(statusColor(state.status).copy(alpha = if (pulsing) alpha else 1f)),
+        Glyph(
+            if (listening) GlyphName.INSERT else GlyphName.MIC,
+            if (listening) {
+                ScribeTokens.accent
+            } else {
+                statusColor(state.status).copy(alpha = if (pulsing) alpha else 1f)
+            },
+            size = 18.dp,
+            thickness = 1.8.dp,
         )
     }
 }
@@ -226,43 +245,66 @@ private fun HamburgerButton(open: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** The collapsed bubble: the smallest thing that says "Scribe is here". */
+/**
+ * The collapsed bubble: the smallest thing that says "Scribe is here".
+ *
+ * It carries its own close badge. An overlay that appears over other apps and cannot be
+ * dismissed without going to system settings is the kind of thing people uninstall, and
+ * "there is no X" was the first thing said about the previous version.
+ */
 @Composable
 fun VoiceBubble(
     state: EngineState,
     onClick: () -> Unit,
+    onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val recording = state.status == DictationStatus.RECORDING
-    // A circle pressed into the surface, the way the Scribe mark itself is drawn. Raised
-    // while it is listening, so the one moment it is doing something is the one moment it
-    // stands proud of the screen.
-    Box(
-        modifier
-            .testTag("voice-bubble")
-            .size(58.dp)
-            .then(
-                if (recording) {
-                    Modifier.neuActive(CircleShape, ScribeTokens.rec)
-                } else {
-                    Modifier.neuInset(CircleShape)
-                },
-            )
-            .semantics { contentDescription = "Dictate with Scribe" }
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (recording) {
-            Waveform(
-                level = state.level,
-                status = state.status,
-                boostActive = state.boostActive,
-                modifier = Modifier.padding(horizontal = 10.dp),
-                height = 22.dp,
-                barCount = 5,
-            )
-        } else {
-            ScribeMark(size = 34.dp)
+    val recording = state.stage == DictationStage.LISTENING
+
+    Box(modifier.padding(6.dp)) {
+        // A circle pressed into the surface, like the Scribe mark itself. Raised while it
+        // listens, so the one moment it is doing something is the one moment it stands
+        // proud of the screen.
+        Box(
+            Modifier
+                .testTag("voice-bubble")
+                .size(58.dp)
+                .then(
+                    if (recording) {
+                        Modifier.neuActive(CircleShape, ScribeTokens.rec)
+                    } else {
+                        Modifier.neuInset(CircleShape)
+                    },
+                )
+                .semantics { contentDescription = "Dictate with Scribe" }
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (recording) {
+                Waveform(
+                    level = state.level,
+                    stage = state.stage,
+                    boostActive = state.boostActive,
+                    modifier = Modifier.padding(horizontal = 10.dp),
+                    height = 22.dp,
+                    barCount = 5,
+                )
+            } else {
+                ScribeMark(size = 34.dp)
+            }
+        }
+
+        Box(
+            Modifier
+                .align(Alignment.TopStart)
+                .testTag("bubble-close")
+                .size(22.dp)
+                .neuRaised(CircleShape, ScribeTokens.s1)
+                .semantics { contentDescription = "Hide the Scribe button" }
+                .clickable(onClick = onClose),
+            contentAlignment = Alignment.Center,
+        ) {
+            Glyph(GlyphName.CLOSE, ScribeTokens.muted, size = 11.dp, thickness = 1.6.dp)
         }
     }
 }

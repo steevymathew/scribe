@@ -24,7 +24,24 @@ import androidx.compose.ui.unit.dp
  *
  * All glyphs are stroked on a 24×24 grid with round caps, so they sit together as one set.
  */
-enum class GlyphName { MIC, BACKSPACE, RETURN, ARROW_LEFT, ARROW_RIGHT, KEYBOARD, CHECK, BOLT, SPACE }
+enum class GlyphName {
+    MIC, BACKSPACE, RETURN, ARROW_LEFT, ARROW_RIGHT, KEYBOARD, CHECK, BOLT, SPACE,
+
+    /** An arrow dropping onto a line: put this text into the field. */
+    INSERT,
+
+    /** A cross, for discarding. */
+    CLOSE,
+
+    /** Keyboard with a down arrow: put the letters away. */
+    KEYBOARD_HIDE,
+
+    /** Two arrows facing in: make the keyboard narrower. */
+    RESIZE,
+
+    /** A grip, for dragging the panel around. */
+    GRIP,
+}
 
 @Composable
 fun Glyph(
@@ -113,6 +130,46 @@ fun Glyph(
                     close()
                 }
                 drawPath(path, color, style = stroke)
+            }
+
+            GlyphName.INSERT -> {
+                // Down arrow onto a baseline — "place what I said here". Deliberately not
+                // a paper plane: this inserts text into a field, it does not send a message,
+                // and a send icon over someone's half-written chat would be alarming.
+                drawLine(color, p(12f, 3f), p(12f, 14f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(7f, 9f), p(12f, 14f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(17f, 9f), p(12f, 14f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(4f, 20f), p(20f, 20f), stroke.width, StrokeCap.Round)
+            }
+
+            GlyphName.CLOSE -> {
+                drawLine(color, p(6f, 6f), p(18f, 18f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(18f, 6f), p(6f, 18f), stroke.width, StrokeCap.Round)
+            }
+
+            GlyphName.KEYBOARD_HIDE -> {
+                drawRoundRectOutline(p(2f, 4f), Size(20 * unit, 11 * unit), 2.5f * unit, color, stroke)
+                listOf(6f, 10f, 14f).forEach { x ->
+                    drawLine(color, p(x, 8f), p(x + 0.2f, 8f), stroke.width, StrokeCap.Round)
+                }
+                drawLine(color, p(12f, 17f), p(12f, 22f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(9f, 19f), p(12f, 22f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(15f, 19f), p(12f, 22f), stroke.width, StrokeCap.Round)
+            }
+
+            GlyphName.RESIZE -> {
+                drawLine(color, p(3f, 12f), p(9f, 12f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(6f, 9f), p(9f, 12f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(6f, 15f), p(9f, 12f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(21f, 12f), p(15f, 12f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(18f, 9f), p(15f, 12f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(18f, 15f), p(15f, 12f), stroke.width, StrokeCap.Round)
+            }
+
+            GlyphName.GRIP -> {
+                listOf(9f, 12f, 15f).forEach { y ->
+                    drawLine(color, p(7f, y), p(17f, y), stroke.width, StrokeCap.Round)
+                }
             }
 
             GlyphName.SPACE -> {

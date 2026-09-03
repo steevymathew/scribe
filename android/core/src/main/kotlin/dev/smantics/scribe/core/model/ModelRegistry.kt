@@ -105,14 +105,21 @@ object ModelRegistry {
     /**
      * Polish models.
      *
-     * Gemma 3 270M is the default because it is small enough to answer while the user is
-     * still looking at the text, and because instruction-tuned models of this size are
-     * built for exactly this kind of narrow rewriting task.
+     * **Both are optional, and neither is recommended.** Tested on real dictation, a
+     * 270M-parameter model is below the threshold where it helps: it rephrases where it
+     * should tidy, and it cannot produce the lists and formatting people actually want —
+     * which the rule pipeline does anyway, deterministically and instantly.
      *
-     * Qwen 3 0.6B is offered as a stronger option with a caveat: it is a reasoning model
-     * and will sometimes emit a thinking block instead of the cleaned text. PolishGuard
-     * rejects that outright, so the failure mode is "polish did nothing", not "polish
-     * pasted its reasoning into your message".
+     * This is not a tuning problem. Wispr Flow gets its formatting from a *fine-tuned
+     * Llama running in a datacentre*, and the gap between that and a quarter-billion
+     * parameters on a phone is not something a better prompt closes. Clean mode is
+     * complete without either of these, and they are left here as an experiment rather
+     * than a feature.
+     *
+     * Qwen 3 0.6B carries an extra caveat: it is a reasoning model and will sometimes emit
+     * a thinking block instead of the cleaned text. PolishGuard rejects that outright, so
+     * the failure mode is "polish did nothing", not "polish pasted its reasoning into your
+     * message".
      */
     val POLISH_DEFAULT = ModelSpec(
         id = "gemma-3-270m-it",
@@ -125,7 +132,8 @@ object ModelRegistry {
         sizeBytes = 291_545_600,
         sha256 = "0ef57d2c838458a1952664260dcba38e5bdda37494f3af732f06e4add24068e3",
         approxRamMb = 450,
-        notes = "Tidies awkward phrasing. Optional — Clean mode is complete without it.",
+        notes = "Not recommended. At this size the model tends to make transcripts worse " +
+            "rather than better, and it cannot do the formatting the rules already do.",
     )
 
     val POLISH_STRONG = ModelSpec(
@@ -139,8 +147,8 @@ object ModelRegistry {
         sizeBytes = 428_970_080,
         sha256 = "da2572f16c06133561ce56accaa822216f2391ef4d37fba427801cd6736417d4",
         approxRamMb = 900,
-        notes = "Stronger, slower, and occasionally shows its reasoning instead of an " +
-            "answer — Scribe discards those rather than typing them.",
+        notes = "Stronger than the 270M and still not clearly better than the rules alone. " +
+            "Occasionally shows its reasoning instead of an answer, which Scribe discards.",
     )
 
     val speech: List<ModelSpec> = listOf(FEATHER, EVERYDAY, SHARP, MAX)

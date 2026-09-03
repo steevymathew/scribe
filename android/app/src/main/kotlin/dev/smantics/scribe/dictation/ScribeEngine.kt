@@ -80,6 +80,15 @@ enum class DictationStage {
     /** Recording. The raw transcript updates underneath the waveform as you talk. */
     LISTENING,
 
+    /**
+     * The microphone is closed and the final decode is running.
+     *
+     * This stage exists because without it the panel went on saying "listening" for the
+     * several seconds after stop was pressed — the one moment the user most needs to be
+     * told that something changed.
+     */
+    TRANSCRIBING,
+
     /** Removals struck through in the raw text. */
     CLEANING,
 
@@ -429,6 +438,9 @@ class ScribeEngine private constructor(private val appContext: Context) {
         if (!toggleActive.compareAndSet(true, false)) return
         partialSchedule?.cancel(false)
         partialSchedule = null
+        // Immediately, before any decoding: the user pressed stop and must see that
+        // registered now, not in three seconds when the transcript arrives.
+        _state.value = _state.value.copy(stage = DictationStage.TRANSCRIBING, level = 0f)
         // Abandon a partial mid-decode so the final transcription starts immediately
         // rather than queueing behind work whose answer is about to be superseded.
         provider.cancelAll()
@@ -559,14 +571,30 @@ class ScribeEngine private constructor(private val appContext: Context) {
             return
         }
 
-        publish(DictationStage.CLEANING)
-        timers.schedule({
-            publish(DictationStage.PUNCTUATING)
-            timers.schedule({
+        // Only show a stage that has something to say. A "cleaning up" caption over text
+        // with nothing struck through is a delay pretending to be an explanation.
+        val removes = segments.any { it.kind == TextDiff.Kind.REMOVED }
+        val adds = segments.any { it.kind == TextDiff.Kind.ADDED }
+
+        fun punctuateThenFinish() {
+            if (adds) {
+                publish(DictationStage.PUNCTUATING)
+                timers.schedule({
+                    publish(DictationStage.FINAL)
+                    timers.schedule({ commit() }, FINAL_HOLD_MS, TimeUnit.MILLISECONDS)
+                }, PUNCTUATING_MS, TimeUnit.MILLISECONDS)
+            } else {
                 publish(DictationStage.FINAL)
                 timers.schedule({ commit() }, FINAL_HOLD_MS, TimeUnit.MILLISECONDS)
-            }, PUNCTUATING_MS, TimeUnit.MILLISECONDS)
-        }, CLEANING_MS, TimeUnit.MILLISECONDS)
+            }
+        }
+
+        if (removes) {
+            publish(DictationStage.CLEANING)
+            timers.schedule({ punctuateThenFinish() }, CLEANING_MS, TimeUnit.MILLISECONDS)
+        } else {
+            punctuateThenFinish()
+        }
     }
 
     // ------------------------------------------------------------- hands-free
@@ -668,6 +696,15 @@ class ScribeEngine private constructor(private val appContext: Context) {
 
     // ---------------------------------------------------------------- events
 
+    /**
+     * Fold an engine event into the visible state.
+     *
+     * The reveal is started *after* the assignment below, never inside it. It publishes
+     * states of its own, and running it inside the `when` meant the assignment that
+     * followed immediately overwrote the stage it had just set — so the panel went on
+     * saying "listening" for the whole time the final decode was running, which is exactly
+     * the window in which the user needs to be told something has changed.
+     */
     private fun onEvent(event: DictationEvent) {
         val current = _state.value
         _state.value = when (event) {
@@ -699,7 +736,8 @@ class ScribeEngine private constructor(private val appContext: Context) {
             is DictationEvent.Injected -> {
                 recordHistory(event)
                 recordSpeed(event)
-                if (!deliverToggle(event)) deliverHandsFree(event)
+                // The reveal publishes states of its own and runs *after* this assignment
+                // — see the note on onEvent.
                 current.copy(
                     status = DictationStatus.READY,
                     statusDetail = if (event.text.isEmpty()) "Nothing heard" else "Inserted",
@@ -718,6 +756,10 @@ class ScribeEngine private constructor(private val appContext: Context) {
                 error = event.message,
                 level = 0f,
             )
+        }
+
+        if (event is DictationEvent.Injected) {
+            if (!deliverToggle(event)) deliverHandsFree(event)
         }
     }
 
@@ -794,10 +836,12 @@ class ScribeEngine private constructor(private val appContext: Context) {
         private const val PARTIAL_FIRST_DELAY_MS = 1_200L
         private const val PARTIAL_INTERVAL_MS = 1_800L
 
-        // Long enough to read a struck-through phrase, short enough not to be in the way.
-        private const val CLEANING_MS = 1_100L
-        private const val PUNCTUATING_MS = 800L
-        private const val FINAL_HOLD_MS = 550L
+        // Long enough to register a struck-through phrase, short enough that the text is
+        // not being withheld. The whole reveal is under a second when there is something
+        // to show, and is skipped when there is not.
+        private const val CLEANING_MS = 620L
+        private const val PUNCTUATING_MS = 420L
+        private const val FINAL_HOLD_MS = 260L
 
         @Volatile private var instance: ScribeEngine? = null
 

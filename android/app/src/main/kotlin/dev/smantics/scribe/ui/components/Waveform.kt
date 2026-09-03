@@ -1,6 +1,7 @@
 package dev.smantics.scribe.ui.components
 
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -11,64 +12,101 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import dev.smantics.scribe.ui.theme.DictationStatus
+import dev.smantics.scribe.dictation.DictationStage
 import dev.smantics.scribe.ui.theme.ScribeMotion
 import dev.smantics.scribe.ui.theme.ScribeTokens
 import kotlin.math.abs
 import kotlin.math.sin
 
 /**
- * The live level meter, carried over from the desktop's recording pill and Dictate page.
+ * The level meter, and the app's main signal of what it is doing.
  *
- * Two details are load-bearing and both come from bugs the desktop already fixed:
+ * Each stage gets a **visibly different motion**, because the words in the caption are the
+ * thing nobody reads while they are talking:
  *
- *  - **The container height is fixed.** Bars grow and shrink *inside* it. An earlier
- *    desktop version sized the container to its content and the whole layout bounced on
- *    every syllable.
- *  - **Idle is not flat.** When nothing is being recorded the bars rest in a low, still
- *    sine shape rather than collapsing to nothing, so "not listening" and "listening to
- *    silence" do not look identical. A meter that reads zero when the microphone is dead
- *    and zero when the room is quiet has told the user nothing.
- *
- * While transcribing, the bars stop tracking amplitude — there is none — and shimmer
- * instead, so the state is legible without reading the label.
+ *  - **listening** — bars track the voice, hard. The amplitude is deliberately
+ *    over-driven: a meter that twitches politely at a normal speaking volume reads as
+ *    "barely hearing you", which is the opposite of reassuring.
+ *  - **transcribing** — a sweep travelling left to right through settled bars. Nothing is
+ *    being heard any more, and the shape says so without a word: the input stopped and a
+ *    machine started.
+ *  - **cleaning and punctuating** — a slow, low breath. Work is happening, but it is text
+ *    work, and it should not look like the microphone is open.
+ *  - **idle** — a still, low profile. Not flat: "not listening" and "listening to silence"
+ *    must not look identical.
  */
 @Composable
 fun Waveform(
     level: Float,
-    status: DictationStatus,
+    stage: DictationStage,
     boostActive: Boolean,
     modifier: Modifier = Modifier,
     height: Dp = 40.dp,
     barCount: Int = 28,
 ) {
-    val recording = status == DictationStatus.RECORDING
-    val transcribing = status == DictationStatus.TRANSCRIBING
+    val listening = stage == DictationStage.LISTENING
+    val transcribing = stage == DictationStage.TRANSCRIBING
+    val settling = stage == DictationStage.CLEANING ||
+        stage == DictationStage.PUNCTUATING ||
+        stage == DictationStage.FINAL
 
     val transition = rememberInfiniteTransition(label = "waveform")
-    val shimmer by transition.animateFloat(
+
+    // One sweep of the scanner, and one slow breath. Both run continuously; only the
+    // stage decides which is drawn, so switching between them costs nothing.
+    val sweep by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 900),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "shimmer",
+        animationSpec = infiniteRepeatable(animation = tween(900), repeatMode = RepeatMode.Restart),
+        label = "sweep",
+    )
+    val breath by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(animation = tween(1400), repeatMode = RepeatMode.Reverse),
+        label = "breath",
+    )
+    // Drives the per-bar jitter while listening, so the shape moves as a voice does
+    // rather than every bar rising and falling together.
+    val churn by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 100f,
+        animationSpec = infiniteRepeatable(animation = tween(3000), repeatMode = RepeatMode.Restart),
+        label = "churn",
     )
 
-    // The bar heights are smoothed here rather than animated per-bar: 28 separate
-    // Animatables would be 28 recompositions per audio callback, sixteen times a second.
-    val smoothed by animateFloatSmoothed(level, recording)
+    // Smoothed so the meter reads as a voice rather than as noise, but only just: too much
+    // smoothing and it stops tracking syllables.
+    val smoothed by animateFloatAsState(
+        targetValue = if (listening) level else 0f,
+        animationSpec = tween(durationMillis = ScribeMotion.LEVEL_BAR),
+        label = "level",
+    )
 
     val tint = if (boostActive) ScribeTokens.warn else ScribeTokens.accent
-    val idleTint = ScribeTokens.faint
+    val activeColour = when {
+        listening -> tint
+        transcribing -> ScribeTokens.warn
+        settling -> ScribeTokens.good
+        else -> ScribeTokens.faint
+    }
+
+    // A fixed envelope, tallest in the middle, so the meter reads as one shape.
+    val envelope = remember(barCount) {
+        FloatArray(barCount) { i ->
+            val position = i / (barCount - 1f).coerceAtLeast(1f)
+            0.35f + 0.65f * sin(position * Math.PI).toFloat()
+        }
+    }
 
     Box(modifier.fillMaxWidth().height(height)) {
         Canvas(Modifier.fillMaxWidth().height(height)) {
@@ -77,27 +115,41 @@ fun Waveform(
             val centreY = size.height / 2f
 
             for (i in 0 until barCount) {
-                // A fixed envelope, tallest in the middle, so the meter reads as one shape
-                // rather than as a row of unrelated bars.
                 val position = i / (barCount - 1f).coerceAtLeast(1f)
-                val envelope = 0.35f + 0.65f * sin(position * Math.PI).toFloat()
+                val env = envelope[i]
 
                 val fraction = when {
-                    recording -> {
-                        val jitter = 0.75f + 0.25f * abs(sin((i * 1.7f + smoothed * 9f).toDouble())).toFloat()
-                        (0.18f + smoothed * 0.82f) * envelope * jitter
+                    listening -> {
+                        // Over-driven on purpose, and jittered per bar so the shape lives.
+                        val jitter = 0.55f + 0.45f *
+                            abs(sin((i * 0.9f + churn * 0.35f).toDouble())).toFloat()
+                        val amplitude = (smoothed * 1.35f).coerceAtMost(1f)
+                        (0.12f + amplitude * 0.88f) * env * jitter
                     }
                     transcribing -> {
-                        val phase = ((i % 5) / 5f + shimmer) % 1f
-                        (0.20f + 0.30f * sin(phase * Math.PI).toFloat()) * envelope
+                        // A pulse travelling through the bars: distance from the sweep
+                        // head decides the height, so one crest moves left to right.
+                        val distance = abs(position - sweep)
+                        val crest = (1f - (distance * 3.2f)).coerceAtLeast(0f)
+                        (0.14f + crest * 0.86f) * env
                     }
-                    else -> 0.16f * envelope
+                    settling -> (0.16f + 0.14f * breath) * env
+                    else -> 0.14f * env
                 }
 
                 val barHeight = (fraction * size.height).coerceAtLeast(barWidth)
-                val color: Color = if (recording || transcribing) tint else idleTint
+
+                // While the sweep passes, the bar it is on takes the full colour and the
+                // rest sit back — the motion is carried by brightness as well as height.
+                val colour: Color = if (transcribing) {
+                    val distance = abs(position - sweep)
+                    lerp(ScribeTokens.faint, activeColour, (1f - distance * 3.2f).coerceIn(0f, 1f))
+                } else {
+                    activeColour
+                }
+
                 drawRoundRect(
-                    color = color,
+                    color = colour,
                     topLeft = Offset(i * (barWidth + gap), centreY - barHeight / 2f),
                     size = Size(barWidth, barHeight),
                     cornerRadius = CornerRadius(barWidth / 2f),
@@ -106,17 +158,3 @@ fun Waveform(
         }
     }
 }
-
-/**
- * Smooths the raw RMS so the meter reads as a voice rather than as noise.
- *
- * The duration is the desktop's 70 ms bar animation: fast enough to track a syllable,
- * slow enough not to flicker.
- */
-@Composable
-private fun animateFloatSmoothed(target: Float, active: Boolean) =
-    androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (active) target else 0f,
-        animationSpec = tween(durationMillis = ScribeMotion.LEVEL_BAR),
-        label = "level",
-    )

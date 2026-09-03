@@ -160,17 +160,21 @@ fun Context.isBubbleServiceEnabled(): Boolean = runCatching {
 }.getOrDefault(false)
 
 /**
- * The picker where Scribe can be made the system voice input.
+ * The picker where Scribe can be made the system speech recogniser.
  *
- * Android has no single guaranteed destination for this, and Samsung buries it under the
- * keyboard settings, so this tries the dedicated screen first and falls back rather than
- * dead-ending on a device that lacks it.
+ * There is no clean destination for this on Android, and the one that exists is easy to
+ * mistake for the wrong thing: `ACTION_VOICE_INPUT_SETTINGS` lands on the digital-assistant
+ * page, where the recogniser is one row inside the assistant's own settings. That is where
+ * it genuinely lives, so that is where this goes — the misleading part was the label
+ * promising a keyboard voice-input picker that Samsung does not expose to third parties at
+ * all.
  */
 fun Context.openVoiceInputSettings() {
     val candidates = listOf(
         @Suppress("DEPRECATION")
         Intent(Settings.ACTION_VOICE_INPUT_SETTINGS),
         Intent(Settings.ACTION_INPUT_METHOD_SETTINGS),
+        Intent(Settings.ACTION_SETTINGS),
     )
     for (intent in candidates) {
         val started = runCatching {

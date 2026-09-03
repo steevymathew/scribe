@@ -16,6 +16,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import dev.smantics.scribe.core.dictation.TextSink
@@ -29,7 +32,9 @@ import dev.smantics.scribe.ui.components.modelLabelFor
 import dev.smantics.scribe.ui.theme.ScribeTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -112,14 +117,43 @@ class ScribeAccessibilityService : AccessibilityService() {
         // Never take the bubble away mid-utterance: focus flickers as apps redraw, and
         // losing the control you are speaking into is worse than it lingering a moment.
         if (engine.isDictating || expanded) return
+        if (dismissedUntilNextField) {
+            val stillEditable = runCatching {
+                findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let { node ->
+                    val editable = node.isEditable
+                    node.recycle()
+                    editable
+                }
+            }.getOrNull() ?: false
+            if (!stillEditable) dismissedUntilNextField = false
+            return
+        }
 
         val node = runCatching { findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }.getOrNull()
         val editable = node != null && node.isEditable && node.isVisibleToUser
         focusedPackage = node?.packageName?.toString()
         node?.recycle()
 
-        if (editable) showOverlay() else hideOverlay()
+        if (editable) {
+            // Showing is immediate; hiding is not. Apps churn their view trees constantly,
+            // and a bubble that vanishes and reappears on every redraw reads as broken
+            // even when it is technically correct at every instant.
+            hideJob?.cancel()
+            hideJob = null
+            showOverlay()
+        } else if (hideJob == null) {
+            hideJob = scope.launch {
+                delay(HIDE_DEBOUNCE_MS)
+                hideJob = null
+                if (!engine.isDictating && !expanded) hideOverlay()
+            }
+        }
     }
+
+    private var hideJob: Job? = null
+
+    /** Set when the user closes the bubble; cleared once they touch a different field. */
+    @Volatile private var dismissedUntilNextField = false
 
     // ---------------------------------------------------------------- the overlay
 
@@ -146,6 +180,7 @@ class ScribeAccessibilityService : AccessibilityService() {
             y = 320
         }
 
+        overlayParams = params
         val view = ComposeView(this).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
             setContent {
@@ -167,7 +202,20 @@ class ScribeAccessibilityService : AccessibilityService() {
                             onOpenApp = { openApp() },
                         )
                     } else {
-                        VoiceBubble(state = state, onClick = { startDictation() })
+                        VoiceBubble(
+                            state = state,
+                            onClick = { startDictation() },
+                            onClose = { dismiss() },
+                            // Dragged with the finger, like every other floating control on
+                            // the platform. Position is remembered for the session, so it
+                            // stays where it was put.
+                            modifier = Modifier.pointerInput(Unit) {
+                                detectDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    moveBy(dragAmount.x, dragAmount.y)
+                                }
+                            },
+                        )
                     }
                 }
             }
@@ -180,9 +228,30 @@ class ScribeAccessibilityService : AccessibilityService() {
             .onFailure { Log.w(TAG, "could not add the bubble", it) }
     }
 
+    /** Remembered so a drag can adjust it without rebuilding the window. */
+    private var overlayParams: WindowManager.LayoutParams? = null
+
+    /**
+     * Move the bubble. Gravity is END|BOTTOM, so x grows leftward and y grows upward.
+     */
+    private fun moveBy(dx: Float, dy: Float) {
+        val params = overlayParams ?: return
+        val view = overlay ?: return
+        params.x = (params.x - dx).toInt().coerceAtLeast(0)
+        params.y = (params.y - dy).toInt().coerceAtLeast(0)
+        runCatching { windowManager?.updateViewLayout(view, params) }
+    }
+
+    /** Put the bubble away until the user taps a different text field. */
+    private fun dismiss() {
+        dismissedUntilNextField = true
+        hideOverlay()
+    }
+
     private fun hideOverlay() {
         val view = overlay ?: return
         overlay = null
+        overlayParams = null
         expanded = false
         runCatching { windowManager?.removeView(view) }
     }
@@ -288,6 +357,9 @@ class ScribeAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "ScribeA11y"
+
+        /** Long enough to ride out an app redrawing its view tree. */
+        private const val HIDE_DEBOUNCE_MS = 700L
 
         @Volatile private var instance: ScribeAccessibilityService? = null
 

@@ -47,6 +47,7 @@ import dev.smantics.scribe.ui.components.PrimaryButton
 import dev.smantics.scribe.ui.components.ScribeMark
 import dev.smantics.scribe.ui.components.SecondaryButton
 import dev.smantics.scribe.ui.components.Waveform
+import dev.smantics.scribe.dictation.DictationStage
 import dev.smantics.scribe.ui.theme.DictationStatus
 import dev.smantics.scribe.ui.theme.ScribeTokens
 
@@ -249,7 +250,7 @@ private fun MicrophoneStep(
             // and the user finds out here rather than mid-sentence.
             Waveform(
                 level = level,
-                status = DictationStatus.RECORDING,
+                stage = DictationStage.LISTENING,
                 boostActive = false,
             )
             Row(

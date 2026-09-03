@@ -254,24 +254,26 @@ private fun WaysToUseCard(
         )
 
         WayRow(
-            on = system.voiceInputSelected,
-            title = "In the keyboard you already use",
-            body = "Set Scribe as the phone's voice input, then use the microphone button " +
-                "on Samsung Keyboard, Gboard or anything else. Nothing to switch to.",
-            action = "Set voice input",
-            testTag = "way-voice",
-            onAction = onOpenVoiceInput,
-            recommended = true,
-        )
-        WayRow(
             on = system.bubbleEnabled,
             title = "A button that appears on text fields",
-            body = "A small Scribe button floats near any text box you tap. Needs " +
-                "accessibility access, because that is the only way an app can tell a text " +
-                "field is focused.",
+            body = "A small Scribe button floats near any text box you tap. Drag it " +
+                "anywhere, close it with the ×. Needs accessibility access, because that " +
+                "is the only way an app can tell that a text field is focused.",
             action = "Turn on",
             testTag = "way-bubble",
             onAction = onOpenAccessibility,
+            recommended = true,
+        )
+        WayRow(
+            on = system.voiceInputSelected,
+            title = "As the phone's voice input",
+            body = "Makes Scribe the system speech recogniser, so apps that use it get " +
+                "on-device transcription. Worth knowing: Samsung Keyboard only ever offers " +
+                "its own voice input and Google's, so its microphone button will not use " +
+                "Scribe no matter what is set here — this affects other apps, not that key.",
+            action = "Open recogniser settings",
+            testTag = "way-voice",
+            onAction = onOpenVoiceInput,
         )
         WayRow(
             on = system.keyboardEnabled,
