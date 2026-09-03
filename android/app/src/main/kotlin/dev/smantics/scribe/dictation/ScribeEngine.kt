@@ -9,7 +9,9 @@ import dev.smantics.scribe.audio.MicRecorder
 import dev.smantics.scribe.asr.WhisperProvider
 import dev.smantics.scribe.core.clean.GuardedPolisher
 import dev.smantics.scribe.core.clean.Mode
+import dev.smantics.scribe.core.clean.RawPipeline
 import dev.smantics.scribe.core.clean.PolishVerdict
+import dev.smantics.scribe.core.clean.TextDiff
 import dev.smantics.scribe.core.dictation.DictationEvent
 import dev.smantics.scribe.core.dictation.DictationMachine
 import dev.smantics.scribe.core.dictation.MachineSettings
@@ -24,6 +26,10 @@ import dev.smantics.scribe.settings.ScribeConfig
 import dev.smantics.scribe.settings.SettingsRepository
 import dev.smantics.scribe.ui.theme.DictationStatus
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -46,7 +52,43 @@ data class EngineState(
     val polishAvailable: Boolean = false,
     /** Whether the high-accuracy model is on disk. False on a fresh install. */
     val heavyModelAvailable: Boolean = false,
+
+    /** Which part of the dictate-and-reveal sequence is on screen. */
+    val stage: DictationStage = DictationStage.IDLE,
+
+    /** The live, unpolished transcript, updated while the user is still speaking. */
+    val partialText: String = "",
+
+    /** What Clean mode changed, so the reveal can show its working. */
+    val diff: List<TextDiff.Segment> = emptyList(),
+
+    /** The finished text, once the pipeline has run. */
+    val finalText: String = "",
 )
+
+/**
+ * The stages of a toggled dictation, in order.
+ *
+ * The user speaks, sees what was heard, then watches the cleanup happen before it lands.
+ * Showing the edit rather than silently applying it is what makes Clean mode trustworthy:
+ * you can see a filler dropped and a correction applied instead of wondering whether the
+ * transcription was wrong.
+ */
+enum class DictationStage {
+    IDLE,
+
+    /** Recording. The raw transcript updates underneath the waveform as you talk. */
+    LISTENING,
+
+    /** Removals struck through in the raw text. */
+    CLEANING,
+
+    /** Additions — punctuation, capitals — marked in the cleaned text. */
+    PUNCTUATING,
+
+    /** The finished line, just before it is inserted. */
+    FINAL,
+}
 
 /**
  * Process-scoped owner of the dictation engine.
@@ -332,6 +374,201 @@ class ScribeEngine private constructor(private val appContext: Context) {
         }
     }
 
+    // --------------------------------------------------------------- toggle
+
+    /**
+     * Start or stop dictating. One tap begins, one tap ends.
+     *
+     * Holding a button down is precise but it costs a hand, and on a phone you are usually
+     * holding the phone with it. Toggling also makes the live transcript worth having:
+     * there is time to look at what is being heard and stop when it has enough.
+     *
+     * Returns true if this call started a session.
+     */
+    fun toggleDictation(sink: TextSink?, packageName: String? = null): Boolean {
+        if (toggleActive.get()) {
+            stopToggle()
+            return false
+        }
+        if (!hasMicPermission()) {
+            _state.value = _state.value.copy(
+                status = DictationStatus.NEEDS_PERMISSION,
+                statusDetail = "Open Scribe to allow the microphone",
+            )
+            return false
+        }
+
+        toggleSink = sink
+        targetPackage = packageName
+        // The reveal commits, not the state machine — so the machine is given a sink that
+        // swallows, and the real one is put back afterwards.
+        sinkBeforeToggle = this.sink
+        this.sink = DiscardingSink
+        toggleActive.set(true)
+        _state.value = _state.value.copy(
+            stage = DictationStage.LISTENING,
+            partialText = "",
+            diff = emptyList(),
+            finalText = "",
+            error = null,
+        )
+        DictationService.start(appContext)
+        machine.startRecording()
+
+        if (machine.status != DictationMachine.Status.RECORDING) {
+            toggleActive.set(false)
+            _state.value = _state.value.copy(stage = DictationStage.IDLE)
+            DictationService.stop(appContext)
+            return false
+        }
+        schedulePartials()
+        return true
+    }
+
+    fun stopToggle() {
+        if (!toggleActive.compareAndSet(true, false)) return
+        partialSchedule?.cancel(false)
+        partialSchedule = null
+        // Abandon a partial mid-decode so the final transcription starts immediately
+        // rather than queueing behind work whose answer is about to be superseded.
+        provider.cancelAll()
+        machine.stopRecording()
+        DictationService.stop(appContext)
+    }
+
+    /** Throw the whole utterance away — the user pressed the cross. */
+    fun cancelToggle() {
+        toggleActive.set(false)
+        partialSchedule?.cancel(false)
+        partialSchedule = null
+        toggleSink = null
+        sink = sinkBeforeToggle
+        sinkBeforeToggle = null
+        cancel()
+        DictationService.stop(appContext)
+        _state.value = _state.value.copy(
+            stage = DictationStage.IDLE,
+            partialText = "",
+            diff = emptyList(),
+            finalText = "",
+        )
+    }
+
+    val isDictating: Boolean get() = toggleActive.get()
+
+    private val toggleActive = AtomicBoolean(false)
+    @Volatile private var toggleSink: TextSink? = null
+    @Volatile private var sinkBeforeToggle: TextSink? = null
+    @Volatile private var partialSchedule: ScheduledFuture<*>? = null
+    private val partialRunning = AtomicBoolean(false)
+
+    private val timers: ScheduledExecutorService =
+        Executors.newSingleThreadScheduledExecutor { r ->
+            Thread(r, "scribe-timers").apply { isDaemon = true }
+        }
+
+    /**
+     * Re-transcribe what has been said so far, every couple of seconds.
+     *
+     * Whisper is not a streaming decoder, so a "live" transcript is really the whole clip
+     * decoded again — cheap while an utterance is short, which is what utterances are.
+     * Partials run on the **same worker** as the final transcription because they share
+     * one native model handle, and one is skipped rather than queued if the previous is
+     * still going, so a slow phone falls back to fewer updates instead of a backlog.
+     */
+    private fun schedulePartials() {
+        partialSchedule = timers.scheduleWithFixedDelay(
+            {
+                if (!toggleActive.get()) return@scheduleWithFixedDelay
+                if (!partialRunning.compareAndSet(false, true)) return@scheduleWithFixedDelay
+                worker.execute {
+                    try {
+                        val audio = recorder.snapshot()
+                        if (!toggleActive.get() || audio.size < MIN_PARTIAL_SAMPLES) return@execute
+                        val c = config
+                        val text = provider.everyday()
+                            .transcribe(audio, c.language, 1, c.initialPrompt())
+                        val shown = RawPipeline.run(text)
+                        if (toggleActive.get() && shown.isNotEmpty()) {
+                            _state.value = _state.value.copy(partialText = shown)
+                        }
+                    } catch (t: Throwable) {
+                        Log.d(TAG, "partial skipped: ${t.message}")
+                    } finally {
+                        partialRunning.set(false)
+                    }
+                }
+            },
+            PARTIAL_FIRST_DELAY_MS,
+            PARTIAL_INTERVAL_MS,
+            TimeUnit.MILLISECONDS,
+        )
+    }
+
+    /**
+     * Walk through the reveal, then insert.
+     *
+     * The pauses are the point: this is the app showing what it did to the user's words
+     * before committing them, which is the difference between a tool that cleans up and a
+     * tool that quietly rewrites.
+     */
+    private fun revealAndCommit(raw: String, cleaned: String) {
+        val segments = TextDiff.diff(raw, cleaned)
+        val changed = segments.any { it.kind != TextDiff.Kind.UNCHANGED }
+
+        fun publish(stage: DictationStage) {
+            _state.value = _state.value.copy(
+                stage = stage,
+                diff = segments,
+                finalText = cleaned,
+                partialText = raw,
+            )
+        }
+
+        fun commit() {
+            val target = toggleSink
+            toggleSink = null
+            sink = sinkBeforeToggle
+            sinkBeforeToggle = null
+            if (cleaned.isNotEmpty() && target != null) {
+                runCatching { target.commit(cleaned) }.onFailure {
+                    _state.value = _state.value.copy(
+                        status = DictationStatus.ERROR,
+                        statusDetail = "Could not type into this field",
+                    )
+                }
+            }
+            _state.value = _state.value.copy(
+                stage = DictationStage.IDLE,
+                partialText = "",
+                diff = emptyList(),
+            )
+        }
+
+        if (cleaned.isEmpty()) {
+            _state.value = _state.value.copy(stage = DictationStage.IDLE, partialText = "")
+            toggleSink = null
+            return
+        }
+
+        // Nothing was changed, so there is nothing to show. Skipping the animation here
+        // matters: a reveal that reveals nothing is just a delay.
+        if (!changed) {
+            publish(DictationStage.FINAL)
+            timers.schedule({ commit() }, FINAL_HOLD_MS, TimeUnit.MILLISECONDS)
+            return
+        }
+
+        publish(DictationStage.CLEANING)
+        timers.schedule({
+            publish(DictationStage.PUNCTUATING)
+            timers.schedule({
+                publish(DictationStage.FINAL)
+                timers.schedule({ commit() }, FINAL_HOLD_MS, TimeUnit.MILLISECONDS)
+            }, PUNCTUATING_MS, TimeUnit.MILLISECONDS)
+        }, CLEANING_MS, TimeUnit.MILLISECONDS)
+    }
+
     // ------------------------------------------------------------- hands-free
 
     /**
@@ -462,7 +699,7 @@ class ScribeEngine private constructor(private val appContext: Context) {
             is DictationEvent.Injected -> {
                 recordHistory(event)
                 recordSpeed(event)
-                deliverHandsFree(event)
+                if (!deliverToggle(event)) deliverHandsFree(event)
                 current.copy(
                     status = DictationStatus.READY,
                     statusDetail = if (event.text.isEmpty()) "Nothing heard" else "Inserted",
@@ -510,6 +747,12 @@ class ScribeEngine private constructor(private val appContext: Context) {
     /** Length of the clip most recently handed to the decoder, for the speed measure. */
     @Volatile private var lastAudioSeconds: Double = 0.0
 
+    private fun deliverToggle(event: DictationEvent.Injected): Boolean {
+        if (toggleSink == null && !toggleActive.get()) return false
+        revealAndCommit(raw = RawPipeline.run(event.raw), cleaned = event.text)
+        return true
+    }
+
     private fun deliverHandsFree(event: DictationEvent.Injected) {
         val waiting = pendingTranscript ?: return
         pendingTranscript = null
@@ -544,6 +787,17 @@ class ScribeEngine private constructor(private val appContext: Context) {
 
     companion object {
         private const val TAG = "ScribeEngine"
+
+        /** Below about a second there is not enough audio for a useful partial. */
+        private const val MIN_PARTIAL_SAMPLES = DictationMachine.SAMPLE_RATE
+
+        private const val PARTIAL_FIRST_DELAY_MS = 1_200L
+        private const val PARTIAL_INTERVAL_MS = 1_800L
+
+        // Long enough to read a struck-through phrase, short enough not to be in the way.
+        private const val CLEANING_MS = 1_100L
+        private const val PUNCTUATING_MS = 800L
+        private const val FINAL_HOLD_MS = 550L
 
         @Volatile private var instance: ScribeEngine? = null
 

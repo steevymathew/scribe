@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.smantics.scribe.core.clean.Mode
+import dev.smantics.scribe.dictation.DictationStage
 import dev.smantics.scribe.dictation.EngineState
 import dev.smantics.scribe.ui.theme.DictationStatus
 import dev.smantics.scribe.ui.theme.ScribeMotion
@@ -63,6 +64,7 @@ fun VoicePanel(
     modelLabel: String,
     onToggleMode: () -> Unit,
     onStop: () -> Unit,
+    onCancel: () -> Unit,
     onOpenApp: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -72,8 +74,7 @@ fun VoicePanel(
         modifier
             .testTag("voice-panel")
             .widthIn(min = 260.dp, max = 420.dp)
-            .clip(RoundedCornerShape(ScribeTokens.radius))
-            .background(ScribeTokens.s0)
+            .neuRaised(RoundedCornerShape(ScribeTokens.radius), ScribeTokens.s0)
             .border(1.dp, ScribeTokens.stroke2, RoundedCornerShape(ScribeTokens.radius))
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(ScribeTokens.gapSmall),
@@ -96,14 +97,25 @@ fun VoicePanel(
             HamburgerButton(open = menuOpen) { menuOpen = !menuOpen }
         }
 
-        // The status line is always present, not hidden behind the menu: it is the answer
-        // to "is this working", which is the whole reason the panel is on screen.
-        Text(
-            text = state.statusDetail,
-            color = if (state.error != null) ScribeTokens.rec else ScribeTokens.muted,
-            fontSize = 12.sp,
-            modifier = Modifier.testTag("voice-panel-status"),
-        )
+        // The transcript, and the cleanup happening to it. This is the point of the
+        // panel: the bubble exists so there is something to press, and this is what makes
+        // pressing it worth watching.
+        if (state.stage != DictationStage.IDLE) {
+            TranscriptReveal(
+                stage = state.stage,
+                partialText = state.partialText,
+                diff = state.diff,
+                finalText = state.finalText,
+            )
+        } else {
+            // The answer to "is this working", never hidden behind the menu.
+            Text(
+                text = state.statusDetail,
+                color = if (state.error != null) ScribeTokens.rec else ScribeTokens.muted,
+                fontSize = 12.sp,
+                modifier = Modifier.testTag("voice-panel-status"),
+            )
+        }
 
         AnimatedVisibility(
             visible = menuOpen,
@@ -127,10 +139,10 @@ fun VoicePanel(
                 ) {
                     SecondaryButton("Open Scribe", "voice-open-app", onClick = onOpenApp)
                     SecondaryButton(
-                        "Stop",
-                        "voice-stop",
+                        "Discard",
+                        "voice-discard",
                         tint = ScribeTokens.rec,
-                        onClick = onStop,
+                        onClick = onCancel,
                     )
                 }
             }
@@ -168,8 +180,7 @@ private fun StopDot(state: EngineState, onStop: () -> Unit) {
         Modifier
             .testTag("voice-stop-dot")
             .size(32.dp)
-            .clip(CircleShape)
-            .background(ScribeTokens.s1)
+            .neuInset(CircleShape, depth = 0.7f)
             .semantics { contentDescription = "Stop dictating" }
             .clickable(onClick = onStop),
         contentAlignment = Alignment.Center,
@@ -189,8 +200,13 @@ private fun HamburgerButton(open: Boolean, onClick: () -> Unit) {
         Modifier
             .testTag("voice-menu")
             .size(32.dp)
-            .clip(RoundedCornerShape(ScribeTokens.radiusChip))
-            .background(if (open) ScribeTokens.s2 else ScribeTokens.s1)
+            .then(
+                if (open) {
+                    Modifier.neuActive(RoundedCornerShape(ScribeTokens.radiusChip), ScribeTokens.accent)
+                } else {
+                    Modifier.neuInset(RoundedCornerShape(ScribeTokens.radiusChip), depth = 0.7f)
+                },
+            )
             .semantics { contentDescription = if (open) "Hide details" else "Show details" }
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -218,16 +234,19 @@ fun VoiceBubble(
     modifier: Modifier = Modifier,
 ) {
     val recording = state.status == DictationStatus.RECORDING
+    // A circle pressed into the surface, the way the Scribe mark itself is drawn. Raised
+    // while it is listening, so the one moment it is doing something is the one moment it
+    // stands proud of the screen.
     Box(
         modifier
             .testTag("voice-bubble")
-            .size(56.dp)
-            .clip(CircleShape)
-            .background(ScribeTokens.s0)
-            .border(
-                width = if (recording) 2.dp else 1.dp,
-                color = if (recording) ScribeTokens.rec else ScribeTokens.stroke2,
-                shape = CircleShape,
+            .size(58.dp)
+            .then(
+                if (recording) {
+                    Modifier.neuActive(CircleShape, ScribeTokens.rec)
+                } else {
+                    Modifier.neuInset(CircleShape)
+                },
             )
             .semantics { contentDescription = "Dictate with Scribe" }
             .clickable(onClick = onClick),

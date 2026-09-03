@@ -10,6 +10,7 @@ import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import dev.smantics.scribe.core.dictation.TextSink
+import dev.smantics.scribe.dictation.DictationStage
 import dev.smantics.scribe.dictation.ScribeEngine
 import dev.smantics.scribe.ime.ImeComposeHost
 import dev.smantics.scribe.ui.MainActivity
@@ -107,7 +109,9 @@ class ScribeAccessibilityService : AccessibilityService() {
      * focus flickered would be worse than a moment of it lingering.
      */
     private fun updateForFocus() {
-        if (engine.state.value.status.name == "RECORDING" || expanded) return
+        // Never take the bubble away mid-utterance: focus flickers as apps redraw, and
+        // losing the control you are speaking into is worse than it lingering a moment.
+        if (engine.isDictating || expanded) return
 
         val node = runCatching { findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }.getOrNull()
         val editable = node != null && node.isEditable && node.isVisibleToUser
@@ -147,12 +151,19 @@ class ScribeAccessibilityService : AccessibilityService() {
             setContent {
                 val state by engine.state.collectAsState()
                 ScribeTheme {
+                    // Collapse once the whole sequence, insertion included, is over.
+                    LaunchedEffect(state.stage) {
+                        if (state.stage == DictationStage.IDLE && !engine.isDictating) {
+                            expanded = false
+                        }
+                    }
                     if (expanded) {
                         VoicePanel(
                             state = state,
                             modelLabel = modelLabelFor(state),
                             onToggleMode = { engine.toggleMode() },
                             onStop = { stopDictation() },
+                            onCancel = { engine.cancelToggle(); expanded = false },
                             onOpenApp = { openApp() },
                         )
                     } else {
@@ -178,19 +189,25 @@ class ScribeAccessibilityService : AccessibilityService() {
 
     // -------------------------------------------------------------- dictation
 
+    /**
+     * One tap starts, one tap stops — the same toggle the keyboard uses.
+     *
+     * The panel stays expanded through the reveal and closes once the text has been
+     * inserted, so the bubble is never sitting open over a finished job.
+     */
     private fun startDictation() {
         expanded = true
-        engine.startHandsFree(
-            packageName = focusedPackage,
-            sink = nodeSink,
-            onFinished = { _, _ -> expanded = false },
-            onFailed = { expanded = false },
-        )
+        val started = engine.toggleDictation(sink = nodeSink, packageName = focusedPackage)
+        if (!started && !engine.isDictating) {
+            // Nothing silent: if the microphone could not be opened the panel says so
+            // rather than the bubble appearing to do nothing at all, which is exactly how
+            // this failed the first time it went on a phone.
+            Log.w(TAG, "dictation did not start: ${engine.state.value.statusDetail}")
+        }
     }
 
     private fun stopDictation() {
-        engine.stopHandsFree()
-        expanded = false
+        if (engine.isDictating) engine.stopToggle() else engine.cancelToggle()
     }
 
     private fun openApp() {

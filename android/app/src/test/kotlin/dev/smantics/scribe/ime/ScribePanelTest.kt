@@ -10,6 +10,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
 import dev.smantics.scribe.core.clean.Mode
+import dev.smantics.scribe.core.clean.TextDiff
+import dev.smantics.scribe.dictation.DictationStage
 import dev.smantics.scribe.dictation.EngineState
 import dev.smantics.scribe.ui.theme.DictationStatus
 import dev.smantics.scribe.ui.theme.ScribeTheme
@@ -46,14 +48,15 @@ class ScribePanelTest {
 
     private class RecordingActions : PanelActions {
         val calls = mutableListOf<String>()
-        override fun startRecording() { calls += "start" }
-        override fun stopRecording() { calls += "stop" }
+        override fun toggleDictation() { calls += "toggleDictation" }
+        override fun cancelDictation() { calls += "cancel" }
         override fun toggleMode() { calls += "toggle" }
         override fun setBoost(held: Boolean) { calls += "boost:$held" }
+        override fun type(text: String) { calls += "type:$text" }
         override fun backspace() { calls += "backspace" }
+        override fun deleteWord() { calls += "deleteWord" }
         override fun space() { calls += "space" }
         override fun enter() { calls += "enter" }
-        override fun moveCursor(delta: Int) { calls += "cursor:$delta" }
         override fun switchKeyboard() { calls += "switch" }
         override fun openApp() { calls += "openApp" }
     }
@@ -73,12 +76,44 @@ class ScribePanelTest {
 
     // ------------------------------------------------------------- the controls
 
-    @Test fun `the panel shows the microphone, the mode toggle and the edit row`() {
+    @Test fun `the panel shows the microphone, the mode toggle and a usable keyboard`() {
         panel()
         compose.onNodeWithTag("mic-button").assertIsDisplayed()
         compose.onNodeWithTag("mode-toggle").assertIsDisplayed()
         compose.onNodeWithTag("key-Backspace").assertIsDisplayed()
         compose.onNodeWithTag("key-Switch keyboard").assertIsDisplayed()
+    }
+
+    /**
+     * The correction the first release needed. Shipping voice-only meant fixing one
+     * misheard word sent the user to another keyboard, so Scribe must be able to type.
+     */
+    @Test fun `letters can be typed without leaving Scribe`() {
+        val actions = RecordingActions()
+        panel(actions = actions)
+        compose.onNodeWithTag("key-q").performClick()
+        compose.onNodeWithTag("key-a").performClick()
+        compose.onNodeWithTag("key-Space").performClick()
+        assertEquals(listOf("type:q", "type:a", "space"), actions.calls)
+    }
+
+    @Test fun `shift capitalises exactly one letter`() {
+        val actions = RecordingActions()
+        panel(actions = actions)
+        compose.onNodeWithTag("key-Shift").performClick()
+        compose.onNodeWithTag("key-Q").performClick()
+        compose.onNodeWithTag("key-a").performClick()   // shift released after one letter
+        assertEquals(listOf("type:Q", "type:a"), actions.calls)
+    }
+
+    @Test fun `the symbols layer is reachable and comes back`() {
+        val actions = RecordingActions()
+        panel(actions = actions)
+        compose.onNodeWithTag("key-Symbols").performClick()
+        compose.onNodeWithTag("key-1").performClick()
+        compose.onNodeWithTag("key-Letters").performClick()
+        compose.onNodeWithTag("key-q").performClick()
+        assertEquals(listOf("type:1", "type:q"), actions.calls)
     }
 
     @Test fun `the mode toggle sits next to the waveform and is reachable`() {
@@ -113,7 +148,11 @@ class ScribePanelTest {
         compose.onNodeWithText("Microphone unavailable — check Settings → Audio").assertIsDisplayed()
     }
 
-    @Test fun `the boost badge appears only when high accuracy is armed`() {
+    /**
+     * The panel lost its status row in the redesign — the transcript took that space — so
+     * high accuracy now reads from the state of its own control rather than a badge.
+     */
+    @Test fun `high accuracy reports its state through the control`() {
         panel(
             EngineState(
                 status = DictationStatus.READY,
@@ -122,7 +161,10 @@ class ScribePanelTest {
                 heavyModelAvailable = true,
             ),
         )
-        compose.onNodeWithText("HD").assertIsDisplayed()
+        assertTrue(
+            compose.onAllNodesWithContentDescription("High accuracy on")
+                .fetchSemanticsNodes().isNotEmpty(),
+        )
     }
 
     // ------------------------------------------------------ the permission path
@@ -157,32 +199,42 @@ class ScribePanelTest {
     }
 
     /** Editing keys stay available even without the microphone: the keyboard still works. */
-    @Test fun `the edit row survives the permission state`() {
+    /** Typing must keep working even when dictation cannot. */
+    @Test fun `the keyboard still types in the permission state`() {
         panel(
             EngineState(
                 status = DictationStatus.NEEDS_PERMISSION,
                 statusDetail = "Open Scribe to allow the microphone",
             ),
         )
+        compose.onNodeWithTag("key-q").assertIsDisplayed()
         compose.onNodeWithTag("key-Switch keyboard").assertIsDisplayed()
     }
 
     // --------------------------------------------------------------- the keys
 
-    @Test fun `every edit key routes to its action`() {
+    @Test fun `the editing keys route to their actions`() {
         val actions = RecordingActions()
         panel(actions = actions)
         compose.onNodeWithTag("key-Backspace").performClick()
-        compose.onNodeWithTag("key-Space").performClick()
         compose.onNodeWithTag("key-Enter").performClick()
-        compose.onNodeWithTag("key-Move cursor left").performClick()
-        compose.onNodeWithTag("key-Move cursor right").performClick()
         compose.onNodeWithTag("key-Switch keyboard").performClick()
+        assertEquals(listOf("backspace", "enter", "switch"), actions.calls)
+    }
 
-        assertEquals(
-            listOf("backspace", "space", "enter", "cursor:-1", "cursor:1", "switch"),
-            actions.calls,
-        )
+    /** Dictation is a toggle now: one tap on, one tap off, no holding. */
+    @Test fun `the microphone is a toggle`() {
+        val actions = RecordingActions()
+        panel(actions = actions)
+        compose.onNodeWithTag("mic-button").performClick()
+        assertEquals(listOf("toggleDictation"), actions.calls)
+    }
+
+    @Test fun `the microphone key on the bottom row toggles too`() {
+        val actions = RecordingActions()
+        panel(actions = actions)
+        compose.onNodeWithTag("key-Dictate").performClick()
+        assertEquals(listOf("toggleDictation"), actions.calls)
     }
 
     @Test fun `boost is reachable once the high-accuracy model is installed`() {
@@ -216,6 +268,70 @@ class ScribePanelTest {
         }
     }
 
+    // ------------------------------------------------------------ the reveal
+
+    @Test fun `nothing is revealed while idle`() {
+        panel()
+        compose.onNodeWithTag("transcript-reveal").assertDoesNotExist()
+    }
+
+    @Test fun `the live transcript appears while listening`() {
+        panel(
+            EngineState(
+                status = DictationStatus.RECORDING,
+                statusDetail = "Listening…",
+                stage = DictationStage.LISTENING,
+                partialText = "hey um Sydney just wanted to check",
+            ),
+        )
+        compose.onNodeWithTag("transcript-reveal").assertIsDisplayed()
+        compose.onNodeWithText("hey um Sydney just wanted to check").assertIsDisplayed()
+        compose.onNodeWithText("LISTENING").assertIsDisplayed()
+    }
+
+    @Test fun `the cleanup names each stage as it happens`() {
+        val diff = TextDiff.diff("hey um Sydney", "Hey Sydney")
+        panel(
+            EngineState(
+                status = DictationStatus.TRANSCRIBING,
+                statusDetail = "Cleaning up",
+                stage = DictationStage.CLEANING,
+                diff = diff,
+                finalText = "Hey Sydney",
+            ),
+        )
+        compose.onNodeWithText("CLEANING IT UP").assertIsDisplayed()
+    }
+
+    @Test fun `the finished line is shown before it is inserted`() {
+        panel(
+            EngineState(
+                status = DictationStatus.READY,
+                statusDetail = "Ready",
+                stage = DictationStage.FINAL,
+                finalText = "Hey Sydney, just wanted to check.",
+            ),
+        )
+        compose.onNodeWithText("Hey Sydney, just wanted to check.").assertIsDisplayed()
+        compose.onNodeWithText("READY TO INSERT").assertIsDisplayed()
+    }
+
+    /** An utterance in progress can be thrown away rather than only waited out. */
+    @Test fun `the reveal can be discarded`() {
+        val actions = RecordingActions()
+        panel(
+            EngineState(
+                status = DictationStatus.TRANSCRIBING,
+                statusDetail = "Cleaning up",
+                stage = DictationStage.CLEANING,
+                finalText = "something",
+            ),
+            actions,
+        )
+        compose.onNodeWithTag("voice-cancel").performClick()
+        assertEquals(listOf("cancel"), actions.calls)
+    }
+
     // ------------------------------------------------------------ accessibility
 
     /**
@@ -225,13 +341,12 @@ class ScribePanelTest {
     @Test fun `controls are labelled for a screen reader`() {
         panel()
         listOf(
-            "Hold to dictate",
+            "Start dictating",
             "Dictation mode",
             "Backspace",
             "Space",
             "Enter",
-            "Move cursor left",
-            "Move cursor right",
+            "Shift",
             "Switch keyboard",
         ).forEach { label ->
             val nodes = compose.onAllNodesWithContentDescription(label).fetchSemanticsNodes()

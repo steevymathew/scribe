@@ -159,13 +159,48 @@ class ScribeInputMethodService : InputMethodService() {
     // ------------------------------------------------------------- the actions
 
     private val panelActions = object : PanelActions {
-        override fun startRecording() = engine.startRecording()
-        override fun stopRecording() = engine.stopRecording()
+
+        /**
+         * One tap starts, one tap stops. The transcript is inserted after the reveal, not
+         * at the moment the microphone closes, so what lands in the field is what the
+         * user just watched being assembled.
+         */
+        override fun toggleDictation() {
+            engine.toggleDictation(sink, currentInputEditorInfo?.packageName)
+        }
+
+        override fun cancelDictation() = engine.cancelToggle()
         override fun toggleMode() = engine.toggleMode()
         override fun setBoost(held: Boolean) = engine.setBoost(held)
 
+        override fun type(text: String) {
+            currentInputConnection?.commitText(text, 1)
+        }
+
         override fun backspace() {
             currentInputConnection?.deleteSurroundingText(1, 0)
+        }
+
+        /**
+         * Delete the word before the cursor, plus the whitespace that followed it.
+         *
+         * Dictation produces whole phrases, so clearing a bad one character by character
+         * means holding backspace for twenty seconds. The text before the cursor is read
+         * rather than assumed, so this deletes exactly one word wherever the cursor is —
+         * and falls back to a single character when there is no word boundary to find.
+         */
+        override fun deleteWord() {
+            val ic = currentInputConnection ?: return
+            val before = ic.getTextBeforeCursor(WORD_LOOKBEHIND, 0)?.toString().orEmpty()
+            if (before.isEmpty()) return
+
+            var end = before.length
+            while (end > 0 && before[end - 1].isWhitespace()) end--
+            var start = end
+            while (start > 0 && !before[start - 1].isWhitespace()) start--
+
+            val count = (before.length - start).coerceAtLeast(1)
+            ic.deleteSurroundingText(count, 0)
         }
 
         override fun space() {
@@ -173,9 +208,9 @@ class ScribeInputMethodService : InputMethodService() {
         }
 
         /**
-         * Enter means "send" in a chat app and "new line" in a note. The editor tells us
-         * which through its IME action, and honouring that is the difference between a
-         * keyboard that works in WhatsApp and one that inserts a stray line break.
+         * Enter means "send" in a chat app and "new line" in a note. The editor says which
+         * through its IME action, and honouring that is the difference between a keyboard
+         * that works in WhatsApp and one that inserts a stray line break.
          */
         override fun enter() {
             val ic = currentInputConnection ?: return
@@ -194,19 +229,11 @@ class ScribeInputMethodService : InputMethodService() {
             }
         }
 
-        override fun moveCursor(delta: Int) {
-            val ic = currentInputConnection ?: return
-            val code = if (delta < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
-            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
-            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
-        }
-
         /**
          * One tap back to the previous keyboard.
          *
-         * Choosing Scribe must never feel like a commitment. `switchToPreviousInputMethod`
-         * returns to whatever the user was using before; if the system has nothing to go
-         * back to, the picker is the honest fallback rather than doing nothing.
+         * Scribe can type now, so this is a convenience rather than an escape hatch — but
+         * choosing Scribe must still never feel like a commitment.
          */
         override fun switchKeyboard() {
             val switched = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -227,10 +254,9 @@ class ScribeInputMethodService : InputMethodService() {
          * Open Scribe so the user can grant the microphone.
          *
          * Wrapped, because starting an Activity from an input method runs into
-         * background-activity-start rules that vary by Android version and by OEM. If the
-         * system refuses, the exception would otherwise propagate out of a click handler
-         * and take the whole keyboard down — turning "I could not open the app" into "my
-         * keyboard crashed", which is a far worse failure than the one it came from.
+         * background-activity-start rules that vary by version and by OEM. If the system
+         * refuses, an unhandled exception here would take the whole keyboard down —
+         * turning "I could not open the app" into "my keyboard crashed".
          */
         override fun openApp() {
             val intent = Intent(this@ScribeInputMethodService, MainActivity::class.java).apply {
@@ -243,3 +269,6 @@ class ScribeInputMethodService : InputMethodService() {
         }
     }
 }
+
+/** Enough context to find a word boundary without reading the whole field. */
+private const val WORD_LOOKBEHIND = 96

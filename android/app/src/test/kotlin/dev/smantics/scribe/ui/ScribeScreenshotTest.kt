@@ -78,14 +78,15 @@ class ScribeScreenshotTest {
     }
 
     private object NoActions : PanelActions {
-        override fun startRecording() = Unit
-        override fun stopRecording() = Unit
+        override fun toggleDictation() = Unit
+        override fun cancelDictation() = Unit
         override fun toggleMode() = Unit
         override fun setBoost(held: Boolean) = Unit
+        override fun type(text: String) = Unit
         override fun backspace() = Unit
+        override fun deleteWord() = Unit
         override fun space() = Unit
         override fun enter() = Unit
-        override fun moveCursor(delta: Int) = Unit
         override fun switchKeyboard() = Unit
         override fun openApp() = Unit
     }

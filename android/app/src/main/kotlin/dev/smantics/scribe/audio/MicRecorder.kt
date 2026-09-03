@@ -83,6 +83,20 @@ class MicRecorder(
         }
     }
 
+    /**
+     * A copy of the audio so far, taken while the microphone is still open.
+     *
+     * The capture thread only ever appends and only ever grows [length], so reading a
+     * prefix of the buffer is safe without locking: the worst case is a snapshot that is a
+     * few milliseconds behind, which for a partial transcript is not a defect.
+     */
+    override fun snapshot(): FloatArray {
+        if (!running.get()) return FloatArray(0)
+        val end = length
+        val source = buffer
+        return if (end <= 0 || end > source.size) FloatArray(0) else source.copyOf(end)
+    }
+
     override fun stop(): FloatArray {
         if (!running.compareAndSet(true, false)) return FloatArray(0)
         stopped?.await()

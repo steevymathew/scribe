@@ -19,6 +19,16 @@ interface AudioRecorder {
 
     /** Returns the captured samples, or an empty array if nothing was captured. */
     fun stop(): FloatArray
+
+    /**
+     * Everything captured so far, without interrupting the recording.
+     *
+     * This is what makes live transcription possible: the partial decoder takes a copy of
+     * the audio to date, transcribes it, and the recording carries on underneath. The
+     * default returns nothing, so a recorder that cannot do this simply produces no
+     * partials rather than failing.
+     */
+    fun snapshot(): FloatArray = FloatArray(0)
 }
 
 /** One loaded speech model. */
