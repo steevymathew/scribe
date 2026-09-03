@@ -52,6 +52,15 @@ data class ScribeConfig(
     val detectLists: Boolean = true,
     val sentenceCase: Boolean = true,
 
+    /**
+     * Break the text into sentences, paragraphs and list items.
+     *
+     * This is most of what makes Clean look different from Raw over a long dictation —
+     * without it, two minutes of speech arrives as one block.
+     */
+    val paragraphs: Boolean = true,
+    val splitSentences: Boolean = true,
+
     // Optional LLM polish. Off until a model is installed and the user turns it on.
     val polishEnabled: Boolean = false,
     val polishModel: String = "gemma-3-270m-it",
@@ -120,6 +129,8 @@ data class ScribeConfig(
             formatNumbers = formatNumbers,
             detectLists = detectLists,
             sentenceCase = sentenceCase,
+            paragraphs = paragraphs,
+            splitSentences = splitSentences,
         ),
     )
 
@@ -156,6 +167,8 @@ class SettingsRepository(private val context: Context) {
             prefs[K_NUMBERS] = next.formatNumbers
             prefs[K_LISTS] = next.detectLists
             prefs[K_CASE] = next.sentenceCase
+            prefs[K_PARAGRAPHS] = next.paragraphs
+            prefs[K_SPLIT] = next.splitSentences
             prefs[K_POLISH] = next.polishEnabled
             prefs[K_POLISH_MODEL] = next.polishModel
             prefs[K_TONE] = next.tonePerApp.mapValues { it.value.name }.toJson()
@@ -186,6 +199,8 @@ class SettingsRepository(private val context: Context) {
             formatNumbers = this[K_NUMBERS] ?: defaults.formatNumbers,
             detectLists = this[K_LISTS] ?: defaults.detectLists,
             sentenceCase = this[K_CASE] ?: defaults.sentenceCase,
+            paragraphs = this[K_PARAGRAPHS] ?: defaults.paragraphs,
+            splitSentences = this[K_SPLIT] ?: defaults.splitSentences,
             polishEnabled = this[K_POLISH] ?: defaults.polishEnabled,
             polishModel = this[K_POLISH_MODEL] ?: defaults.polishModel,
             tonePerApp = (this[K_TONE]?.fromJson() ?: emptyMap()).mapNotNull { (k, v) ->
@@ -219,6 +234,8 @@ class SettingsRepository(private val context: Context) {
         val K_NUMBERS = booleanPreferencesKey("format_numbers")
         val K_LISTS = booleanPreferencesKey("detect_lists")
         val K_CASE = booleanPreferencesKey("sentence_case")
+        val K_PARAGRAPHS = booleanPreferencesKey("paragraphs")
+        val K_SPLIT = booleanPreferencesKey("split_sentences")
         val K_POLISH = booleanPreferencesKey("polish_enabled")
         val K_POLISH_MODEL = stringPreferencesKey("polish_model")
         val K_TONE = stringPreferencesKey("tone_per_app")

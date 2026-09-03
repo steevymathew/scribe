@@ -2,6 +2,7 @@ package dev.smantics.scribe.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -65,6 +66,7 @@ fun VoicePanel(
     onToggleMode: () -> Unit,
     onStop: () -> Unit,
     onCancel: () -> Unit,
+    onCollapse: () -> Unit,
     onOpenApp: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -84,6 +86,10 @@ fun VoicePanel(
             horizontalArrangement = Arrangement.spacedBy(ScribeTokens.gapSmall),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // Collapse sits first, exactly where the bubble was before it expanded, so
+            // putting the panel away is the same spot that opened it rather than a hunt
+            // across the screen.
+            CollapseButton(onCollapse)
             InsertButton(state, onStop)
             Waveform(
                 level = state.level,
@@ -158,6 +164,22 @@ private fun MenuRow(label: String, value: String) {
     ) {
         Text(label, color = ScribeTokens.faint, fontSize = 12.sp, modifier = Modifier.widthIn(min = 64.dp))
         Text(value, color = ScribeTokens.text, fontSize = 12.sp)
+    }
+}
+
+/** Put the panel away again, back to the small bubble. */
+@Composable
+private fun CollapseButton(onCollapse: () -> Unit) {
+    Box(
+        Modifier
+            .testTag("voice-collapse")
+            .size(32.dp)
+            .neuInset(CircleShape, depth = 0.7f)
+            .semantics { contentDescription = "Shrink Scribe back to the button" }
+            .clickable(onClick = onCollapse),
+        contentAlignment = Alignment.Center,
+    ) {
+        Glyph(GlyphName.RESIZE, ScribeTokens.muted, size = 15.dp, thickness = 1.6.dp)
     }
 }
 
@@ -314,4 +336,40 @@ fun modelLabelFor(state: EngineState): String = when {
     state.modelName.isNotEmpty() && state.boostActive -> "${state.modelName} · high accuracy"
     state.modelName.isNotEmpty() -> state.modelName
     else -> "loading…"
+}
+
+/**
+ * The drop zone that closes the bubble.
+ *
+ * Appears at the bottom of the screen while the bubble is being dragged and grows when the
+ * bubble is over it, which is the gesture Android uses for every other floating control.
+ * Learning it costs nothing because nobody has to.
+ */
+@Composable
+fun DismissTarget(active: Boolean, modifier: Modifier = Modifier) {
+    val size by animateDpAsState(
+        targetValue = if (active) 74.dp else 58.dp,
+        label = "dismiss-size",
+    )
+    Box(
+        modifier
+            .testTag("bubble-dismiss-target")
+            .size(size)
+            .then(
+                if (active) {
+                    Modifier.neuActive(CircleShape, ScribeTokens.rec)
+                } else {
+                    Modifier.neuInset(CircleShape)
+                },
+            )
+            .semantics { contentDescription = "Drop here to close Scribe" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Glyph(
+            GlyphName.CLOSE,
+            if (active) ScribeTokens.rec else ScribeTokens.muted,
+            size = if (active) 26.dp else 20.dp,
+            thickness = 2.dp,
+        )
+    }
 }

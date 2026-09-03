@@ -52,7 +52,7 @@ class DictationService : Service() {
             .setOngoing(true)
             .setSilent(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .build()
 
         ServiceCompat.startForeground(
@@ -70,7 +70,11 @@ class DictationService : Service() {
             NotificationChannel(
                 CHANNEL_ID,
                 getString(R.string.listening_channel),
-                NotificationManager.IMPORTANCE_LOW,
+                // MIN rather than LOW: the notice belongs in the shade, where it can be
+                // checked, and not as a permanent icon in the status bar. Scribe is
+                // holding the microphone, which is worth stating — it is not worth a
+                // badge sitting next to the clock all day.
+                NotificationManager.IMPORTANCE_MIN,
             ).apply {
                 description = getString(R.string.listening_channel_body)
                 setShowBadge(false)

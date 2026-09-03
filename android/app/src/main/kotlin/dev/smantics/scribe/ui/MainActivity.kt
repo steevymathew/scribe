@@ -138,7 +138,6 @@ private fun ScribeApp(
                     onRequestMic = requestMic,
                     onOpenKeyboardSettings = { context.openKeyboardSettings() },
                     onOpenKeyboardPicker = { context.showKeyboardPicker() },
-                    onOpenVoiceInput = { context.openVoiceInputSettings() },
                     onOpenAccessibility = { context.openAccessibilitySettings() },
                     onOpenModels = { screen = Screen.MODELS },
                     onOpenVocabulary = { screen = Screen.VOCABULARY },

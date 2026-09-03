@@ -9,9 +9,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,15 +23,21 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -78,7 +88,6 @@ fun HomeScreen(
     onRequestMic: () -> Unit,
     onOpenKeyboardSettings: () -> Unit,
     onOpenKeyboardPicker: () -> Unit,
-    onOpenVoiceInput: () -> Unit,
     onOpenAccessibility: () -> Unit,
     onOpenModels: () -> Unit,
     onOpenVocabulary: () -> Unit,
@@ -111,7 +120,6 @@ fun HomeScreen(
                 system = system,
                 onOpenKeyboardPicker = onOpenKeyboardPicker,
                 onOpenKeyboardSettings = onOpenKeyboardSettings,
-                onOpenVoiceInput = onOpenVoiceInput,
                 onOpenAccessibility = onOpenAccessibility,
             )
             ModeCard(config) { engine.toggleMode() }
@@ -130,6 +138,7 @@ fun HomeScreen(
                 onHistory = onOpenHistory,
             )
             CleanupCard(config) { update -> scope.launch { engine.settings.update(update) } }
+            TryItCard()
             AboutCard()
         }
     }
@@ -138,6 +147,7 @@ fun HomeScreen(
         Modifier
             .fillMaxSize()
             .background(ScribeTokens.bg)
+            .windowInsetsPadding(WindowInsets.systemBars)
             .verticalScroll(rememberScrollState())
             .padding(ScribeTokens.pageInset),
         verticalArrangement = Arrangement.spacedBy(ScribeTokens.gapLarge),
@@ -219,9 +229,9 @@ private fun SetupCard(
             done = system.micGranted,
             title = "Allow the microphone",
             body = if (system.micPermanentlyDenied) {
-                "Android has stopped asking — this has to be switched on in Scribe's settings."
+                "Android has stopped asking. Switch it on in Scribe's settings."
             } else {
-                "Scribe records only while you hold the button."
+                "Recorded only while you're dictating."
             },
             action = if (system.micPermanentlyDenied) "Open settings" else "Allow",
             onAction = onRequestMic,
@@ -242,47 +252,30 @@ private fun WaysToUseCard(
     system: SystemSetupState,
     onOpenKeyboardPicker: () -> Unit,
     onOpenKeyboardSettings: () -> Unit,
-    onOpenVoiceInput: () -> Unit,
     onOpenAccessibility: () -> Unit,
 ) {
     ScribeCard(testTag = "ways-card") {
         SectionLabel("WAYS TO USE SCRIBE")
-        Text(
-            "Any one of these is enough. You do not need all three.",
-            color = ScribeTokens.muted,
-            fontSize = 13.sp,
-        )
+        Text("Either one works.", color = ScribeTokens.muted, fontSize = 13.sp)
 
         WayRow(
             on = system.bubbleEnabled,
             title = "A button that appears on text fields",
-            body = "A small Scribe button floats near any text box you tap. Drag it " +
-                "anywhere, close it with the ×. Needs accessibility access, because that " +
-                "is the only way an app can tell that a text field is focused.",
+            body = "Floats on screen, works in any app. Drag to move, drag down to close.\n" +
+                "Needs accessibility access — the only way an app may type into another app.",
             action = "Turn on",
             testTag = "way-bubble",
             onAction = onOpenAccessibility,
             recommended = true,
         )
-        WayRow(
-            on = system.voiceInputSelected,
-            title = "As the phone's voice input",
-            body = "Makes Scribe the system speech recogniser, so apps that use it get " +
-                "on-device transcription. Worth knowing: Samsung Keyboard only ever offers " +
-                "its own voice input and Google's, so its microphone button will not use " +
-                "Scribe no matter what is set here — this affects other apps, not that key.",
-            action = "Open recogniser settings",
-            testTag = "way-voice",
-            onAction = onOpenVoiceInput,
-        )
+
         WayRow(
             on = system.keyboardEnabled,
             title = "Scribe's own keyboard",
             body = if (system.keyboardEnabled && !system.keyboardSelected) {
-                "Switched on. Choose it from the keyboard switcher when you want to dictate."
+                "On. Pick it from the keyboard switcher to dictate."
             } else {
-                "A full dictation panel with the waveform and the Raw/Clean switch. You " +
-                    "switch to it, then back, in one tap."
+                "Dictates and types. One tap back to your usual keyboard."
             },
             action = if (system.keyboardEnabled) "Choose keyboard" else "Turn on",
             testTag = "way-keyboard",
@@ -430,9 +423,9 @@ private fun ModeCard(config: ScribeConfig, onToggle: () -> Unit) {
                 )
                 Text(
                     if (config.mode == Mode.RAW) {
-                        "Word for word, exactly as spoken."
+                        "Word for word."
                     } else {
-                        "Punctuated, de-filled and formatted."
+                        "Punctuated, tidied, structured."
                     },
                     color = ScribeTokens.muted,
                     fontSize = 13.sp,
@@ -467,6 +460,50 @@ private fun MoreCard(
 }
 
 /**
+ * Somewhere to actually try it.
+ *
+ * Every other control on this screen changes what happens the *next* time the user
+ * dictates, somewhere else, in another app — so the effect of a toggle is invisible at the
+ * moment it is flipped. This is a real text field: switch to the Scribe keyboard, dictate
+ * into it, and see the result of the settings that are on screen.
+ */
+@Composable
+private fun TryItCard() {
+    var text by remember { mutableStateOf("") }
+    ScribeCard(testTag = "try-it-card") {
+        SectionLabel("TRY IT")
+        Text(
+            "Dictate in here to test your settings.",
+            color = ScribeTokens.muted,
+            fontSize = 13.sp,
+        )
+        Box(
+            Modifier
+                .testTag("demo-field")
+                .fillMaxWidth()
+                .heightIn(min = 84.dp)
+                .clip(RoundedCornerShape(ScribeTokens.radiusSm))
+                .background(ScribeTokens.s2)
+                .padding(12.dp),
+        ) {
+            if (text.isEmpty()) {
+                Text("Tap here, then dictate", color = ScribeTokens.faint, fontSize = 14.sp)
+            }
+            BasicTextField(
+                value = text,
+                onValueChange = { text = it },
+                textStyle = TextStyle(color = ScribeTokens.text, fontSize = 14.sp),
+                cursorBrush = SolidColor(ScribeTokens.accent),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (text.isNotEmpty()) {
+            SecondaryButton("Clear", "demo-clear") { text = "" }
+        }
+    }
+}
+
+/**
  * The Clean pipeline's toggles.
  *
  * The desktop roadmap asks for the pipeline to be "ordered, each step toggleable"; the
@@ -477,25 +514,30 @@ private fun MoreCard(
 private fun CleanupCard(config: ScribeConfig, onUpdate: ((ScribeConfig) -> ScribeConfig) -> Unit) {
     ScribeCard(testTag = "cleanup-card") {
         SectionLabel("CLEAN MODE")
-        ToggleRow("Remove filler words", "um, uh, erm", config.removeFillers) { v ->
+        ToggleRow("Remove fillers", "um, uh, erm", config.removeFillers) { v ->
             onUpdate { it.copy(removeFillers = v) }
         }
-        ToggleRow("Spoken punctuation", "\"comma\" becomes ,", config.spokenPunctuation) { v ->
+        ToggleRow("Spoken punctuation", "\"comma\" → ,", config.spokenPunctuation) { v ->
             onUpdate { it.copy(spokenPunctuation = v) }
         }
         ToggleRow(
-            "Apply spoken corrections",
-            "\"4pm, actually 3pm\" becomes 3pm",
+            "Spoken corrections",
+            "\"4pm, actually 3pm\" → 3pm",
             config.selfCorrection,
         ) { v -> onUpdate { it.copy(selfCorrection = v) } }
+        ToggleRow(
+            "Paragraphs and lists",
+            "Breaks at pauses, numbers become list items",
+            config.paragraphs,
+        ) { v -> onUpdate { it.copy(paragraphs = v, splitSentences = v) } }
         ToggleRow(
             "Format numbers and lists",
             "times, percentages, bullets",
             config.formatNumbers,
         ) { v -> onUpdate { it.copy(formatNumbers = v, detectLists = v) } }
         ToggleRow(
-            "Remove \"you know\" and \"I mean\"",
-            "Off by default — they are also real phrases",
+            "Remove \"you know\", \"I mean\"",
+            "Off — these are also real phrases",
             config.removeVerbalTics,
         ) { v -> onUpdate { it.copy(removeVerbalTics = v) } }
     }
@@ -512,8 +554,7 @@ private fun AboutCard() {
             fontWeight = FontWeight.Medium,
         )
         Text(
-            "Speech recognition runs on this phone with whisper.cpp. Your audio never " +
-                "touches a network socket.",
+            "Runs on this phone. Your audio never touches a network socket.",
             color = ScribeTokens.muted,
             fontSize = 13.sp,
         )

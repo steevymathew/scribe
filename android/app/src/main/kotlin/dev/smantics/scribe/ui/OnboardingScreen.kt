@@ -8,7 +8,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -34,6 +37,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.smantics.scribe.core.model.ModelRegistry
@@ -85,13 +89,18 @@ fun OnboardingScreen(
         onDispose { engine.stopLevelPreview() }
     }
 
+    // Centred, with the content held to a readable column. Setup is the first thing a
+    // person sees, and a wizard whose text runs the full width of an eight-inch display
+    // reads as a form to fill in rather than something to follow.
     Column(
         Modifier
             .fillMaxSize()
             .background(ScribeTokens.bg)
+            .windowInsetsPadding(WindowInsets.systemBars)
             .verticalScroll(rememberScrollState())
-            .padding(ScribeTokens.pageInset),
+            .padding(horizontal = ScribeTokens.pageInset, vertical = 28.dp),
         verticalArrangement = Arrangement.spacedBy(ScribeTokens.gapLarge),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Header(step)
 
@@ -166,13 +175,11 @@ private fun canAdvance(step: Int, system: SystemSetupState): Boolean =
 private fun BlockedReason(step: Int, system: SystemSetupState) {
     val blocked = !canAdvance(step, system)
     val reason = when {
-        step == MIC_STEP && blocked ->
-            "Scribe needs the microphone before it can transcribe anything."
+        step == MIC_STEP && blocked -> "Scribe needs the microphone."
         step == MIC_STEP && system.micPermanentlyDenied ->
-            "You can carry on without it, but Scribe cannot transcribe until the " +
-                "microphone is allowed."
+            "Scribe cannot transcribe until the microphone is allowed."
         step == 2 && !system.keyboardEnabled ->
-            "Not now? You can turn the keyboard on later from the Scribe home screen."
+            "You can set this up later from the home screen."
         else -> null
     } ?: return
     Text(
@@ -210,14 +217,12 @@ private fun Header(step: Int) {
 private fun WelcomeStep() {
     StepBody(
         title = "Talk instead of type",
-        body = "Hold the button, speak, let go — Scribe types your words wherever your " +
-            "cursor is, in any app.",
+        body = "Tap, speak, tap. Your words appear wherever the cursor is.",
     ) {
         Text(
-            "Everything stays on this device. Your voice is transcribed here and never " +
-                "leaves your phone — no account, no cloud, no telemetry.",
-            color = ScribeTokens.muted,
-            fontSize = 13.sp,
+            "Nothing leaves this phone.",
+            color = ScribeTokens.text,
+            fontSize = 14.sp,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(ScribeTokens.gapSmall)) {
             Chip("On-device", ScribeTokens.good)
@@ -238,10 +243,8 @@ private fun MicrophoneStep(
         title = "Microphone",
         body = when {
             granted -> "Say something — the bars should move."
-            permanentlyDenied -> "Android has stopped asking, so this has to be switched " +
-                "on in Scribe's settings."
-            else -> "Scribe records only while you hold the button, and the audio never " +
-                "leaves this phone."
+            permanentlyDenied -> "Android has stopped asking. Switch it on in Scribe's settings."
+            else -> "Recorded only while you're dictating."
         },
     ) {
         if (granted) {
@@ -275,21 +278,15 @@ private fun MicrophoneStep(
 private fun KeyboardStep(enabled: Boolean, onOpen: () -> Unit) {
     StepBody(
         title = "How you'll use it",
-        body = "Scribe can work three ways. You only need one, and you can change your " +
-            "mind later from the home screen.",
+        body = "Pick either. You can change later.",
     ) {
         RouteExplainer(
-            "In the keyboard you already have",
-            "Set Scribe as the phone's voice input, then press the microphone button on " +
-                "whatever keyboard you use. Nothing to switch to. This is the easiest one.",
+            "Scribe's keyboard",
+            "Switch to it when you want to dictate. Types too.",
         )
         RouteExplainer(
-            "A button on text fields",
-            "A small Scribe button appears whenever you tap a text box.",
-        )
-        RouteExplainer(
-            "Scribe's own keyboard",
-            "A full dictation panel you switch to, and back from, in one tap.",
+            "A floating button",
+            "Sits on screen, works in any app. Needs accessibility access.",
         )
         if (enabled) {
             Row(
@@ -297,14 +294,9 @@ private fun KeyboardStep(enabled: Boolean, onOpen: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Glyph(GlyphName.CHECK, ScribeTokens.good, size = 18.dp)
-                Text("Scribe keyboard is on", color = ScribeTokens.good, fontSize = 13.sp)
+                Text("Keyboard is on", color = ScribeTokens.good, fontSize = 13.sp)
             }
         }
-        Text(
-            "Finish setting up, and the home screen will walk you through whichever you pick.",
-            color = ScribeTokens.muted,
-            fontSize = 13.sp,
-        )
     }
 }
 
@@ -328,23 +320,20 @@ private fun RouteExplainer(title: String, body: String) {
 private fun ModesStep() {
     StepBody(
         title = "Raw and Clean",
-        body = "Next to the waveform there is a switch with two settings. It decides what " +
-            "Scribe types.",
+        body = "A switch beside the waveform decides what gets typed.",
     ) {
         ModeExplainer(
             "RAW",
-            "Exactly what you said, word for word — including the ums.",
+            "Word for word, ums included.",
             "um so i think we should ship it friday",
         )
         ModeExplainer(
             "CLEAN",
-            "Punctuated and tidied. Fillers go, spoken punctuation becomes punctuation, " +
-                "and corrections you say out loud are applied.",
+            "Punctuated, tidied, corrections applied.",
             "So I think we should ship it Friday.",
         )
         Text(
-            "You can flip the switch after Scribe has typed and it will rewrite what it " +
-                "just inserted. Nothing is re-recorded.",
+            "Flip it after Scribe types and it rewrites what it just inserted.",
             color = ScribeTokens.muted,
             fontSize = 13.sp,
         )
@@ -391,55 +380,47 @@ private fun DoneStep(
         },
         body = when (state.status) {
             DictationStatus.ERROR -> state.statusDetail
-            DictationStatus.READY ->
-                "Tap a text box anywhere, switch to the Scribe keyboard, and hold the " +
-                    "microphone."
+            DictationStatus.READY -> "Tap a text box, switch to Scribe, press the microphone."
             else -> "Getting the speech model ready…"
         },
     ) {
         if (state.status == DictationStatus.ERROR) {
             Text(
-                "You can still finish setup — Settings → Models has the recovery options.",
+                "Settings → Models has the recovery options.",
                 color = ScribeTokens.muted,
                 fontSize = 13.sp,
             )
         }
-        if (ready && heavyModelInstalled) {
-            Text(
-                "The bolt beside the microphone turns on the high-accuracy model for names " +
-                    "and technical words.",
-                color = ScribeTokens.muted,
-                fontSize = 13.sp,
-            )
-        } else if (ready) {
-            // Do not promise the high-accuracy model on a fresh install: it is a 190 MB
-            // download that is not there yet, and finding that out mid-sentence — on a
-            // plane, which is exactly why someone chose an offline dictation app — is a
-            // promise made in setup and broken on the first try.
-            Text(
-                "A more accurate model is available in Settings → Models when you want it.",
-                color = ScribeTokens.muted,
-                fontSize = 13.sp,
-            )
-        }
-
-        // Asked for explicitly rather than sprung as a dialog on a screen that says
-        // "Ready". Scribe's whole pitch is that it asks for as little as possible.
+        // Asked for explicitly rather than sprung as a dialog on a screen saying "Ready".
         Text(
-            "Scribe shows a notice while the microphone is open, so you always know when " +
-                "it is listening.",
+            "Scribe can show a notice while the microphone is open.",
             color = ScribeTokens.muted,
             fontSize = 13.sp,
         )
-        SecondaryButton("Allow that notice", "allow-notifications", onClick = onRequestNotifications)
+        SecondaryButton("Allow it", "allow-notifications", onClick = onRequestNotifications)
     }
 }
 
 @Composable
 private fun StepBody(title: String, body: String, content: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(ScribeTokens.gap)) {
-        Text(title, color = ScribeTokens.text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-        Text(body, color = ScribeTokens.muted, fontSize = 14.sp)
+    Column(
+        Modifier.widthIn(max = 420.dp),
+        verticalArrangement = Arrangement.spacedBy(ScribeTokens.gap),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            title,
+            color = ScribeTokens.text,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            body,
+            color = ScribeTokens.muted,
+            fontSize = 15.sp,
+            textAlign = TextAlign.Center,
+        )
         content()
     }
 }

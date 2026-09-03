@@ -150,6 +150,19 @@ class ScribeInputMethodService : InputMethodService() {
         )
     }
 
+    /**
+     * Never take over the screen in landscape.
+     *
+     * By default an input method switches to "extract" mode on a short screen: the app is
+     * hidden and replaced by a full-screen editing box owned by the keyboard. That is why
+     * rotating turned the field into a giant text area with the conversation gone — it was
+     * not a layout bug, it was the framework doing what it does unless told otherwise.
+     *
+     * Scribe's panel is short, and the whole point of dictating is watching the text land
+     * where it is going, so the app stays visible.
+     */
+    override fun onEvaluateFullscreenMode(): Boolean = false
+
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         // The decor exists for certain by now, even if it did not when the view was built.

@@ -35,6 +35,7 @@ import dev.smantics.scribe.dictation.DictationStage
 import dev.smantics.scribe.dictation.ScribeEngine
 import dev.smantics.scribe.ime.ImeComposeHost
 import dev.smantics.scribe.ui.MainActivity
+import dev.smantics.scribe.ui.components.DismissTarget
 import dev.smantics.scribe.ui.components.VoiceBubble
 import dev.smantics.scribe.ui.components.VoicePanel
 import dev.smantics.scribe.ui.components.modelLabelFor
@@ -96,6 +97,18 @@ class ScribeAccessibilityService : AccessibilityService() {
             IntentFilter(ACTION_SUMMON),
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
+        // An accessibility overlay keeps drawing when the screen turns off, which puts the
+        // bubble on the always-on display alongside the clock. Nothing about a dictation
+        // button belongs there, so it comes down with the screen and back up with it.
+        ContextCompat.registerReceiver(
+            this,
+            screenReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         // Up straight away, rather than waiting to detect a text field that may never be
         // reported. The user turned this on; showing it is the whole agreement.
         showOverlay()
@@ -118,6 +131,7 @@ class ScribeAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         runCatching { unregisterReceiver(summonReceiver) }
+        runCatching { unregisterReceiver(screenReceiver) }
         runCatching {
             getSystemService(NotificationManager::class.java)?.cancel(SUMMON_NOTIFICATION)
         }
@@ -200,7 +214,7 @@ class ScribeAccessibilityService : AccessibilityService() {
     // ---------------------------------------------------------------- the overlay
 
     private fun showOverlay() {
-        if (overlay != null) return
+        if (overlay != null || !screenOn) return
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
         windowManager = wm
 
@@ -241,6 +255,10 @@ class ScribeAccessibilityService : AccessibilityService() {
                             onToggleMode = { engine.toggleMode() },
                             onStop = { stopDictation() },
                             onCancel = { engine.cancelToggle(); expanded = false },
+                            onCollapse = {
+                                if (engine.isDictating) engine.cancelToggle()
+                                expanded = false
+                            },
                             onOpenApp = { openApp() },
                         )
                     } else {
@@ -251,8 +269,18 @@ class ScribeAccessibilityService : AccessibilityService() {
                             // Dragged with the finger, like every other floating control on
                             // the platform. Position is remembered for the session, so it
                             // stays where it was put.
+                            // Dragged with the finger, and dropped onto the target at the
+                            // bottom of the screen to dismiss — the gesture every other
+                            // floating control on Android uses, so it needs no explaining.
                             modifier = Modifier.pointerInput(Unit) {
-                                detectDragGestures { change, dragAmount ->
+                                detectDragGestures(
+                                    onDragStart = { dragging = true },
+                                    onDragEnd = {
+                                        dragging = false
+                                        if (overTarget) dismiss() else settle()
+                                    },
+                                    onDragCancel = { dragging = false },
+                                ) { change, dragAmount ->
                                     change.consume()
                                     moveBy(dragAmount.x, dragAmount.y)
                                 }
@@ -273,6 +301,15 @@ class ScribeAccessibilityService : AccessibilityService() {
     /** Remembered so a drag can adjust it without rebuilding the window. */
     private var overlayParams: WindowManager.LayoutParams? = null
 
+    /** True while a finger is moving the bubble; shows the dismiss target. */
+    private var dragging by mutableStateOf(false)
+
+    /** True when the bubble is over the dismiss target and letting go would close it. */
+    private var overTarget by mutableStateOf(false)
+
+    /** The window holding the dismiss target, added only while a drag is in progress. */
+    private var dismissTarget: ComposeView? = null
+
     /**
      * Move the bubble. Gravity is END|BOTTOM, so x grows leftward and y grows upward.
      */
@@ -282,12 +319,58 @@ class ScribeAccessibilityService : AccessibilityService() {
         params.x = (params.x - dx).toInt().coerceAtLeast(0)
         params.y = (params.y - dy).toInt().coerceAtLeast(0)
         runCatching { windowManager?.updateViewLayout(view, params) }
+
+        showDismissTarget()
+        // Gravity is BOTTOM, so a small y means near the bottom of the screen, which is
+        // where the target sits.
+        overTarget = params.y < DISMISS_REACH_PX
+    }
+
+    /** Snap back from the dismiss zone when the finger lifts without dropping. */
+    private fun settle() {
+        hideDismissTarget()
+        val params = overlayParams ?: return
+        val view = overlay ?: return
+        if (params.y < DISMISS_REACH_PX) {
+            params.y = DISMISS_REACH_PX
+            runCatching { windowManager?.updateViewLayout(view, params) }
+        }
+        overTarget = false
+    }
+
+    private fun showDismissTarget() {
+        if (dismissTarget != null) return
+        val wm = windowManager ?: return
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM
+            y = 96
+        }
+        val view = ComposeView(this).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            setContent { ScribeTheme { DismissTarget(active = overTarget) } }
+        }
+        host.attachTo(view)
+        runCatching { wm.addView(view, params) }.onSuccess { dismissTarget = view }
+    }
+
+    private fun hideDismissTarget() {
+        val view = dismissTarget ?: return
+        dismissTarget = null
+        runCatching { windowManager?.removeView(view) }
     }
 
     /** Put the bubble away until the user taps a different text field. */
     private fun dismiss() {
         dismissedUntilNextField = true
         dismissedByUser = true
+        hideDismissTarget()
         hideOverlay()
         showSummonNotification()
     }
@@ -306,7 +389,7 @@ class ScribeAccessibilityService : AccessibilityService() {
                 NotificationChannel(
                     SUMMON_CHANNEL,
                     getString(R.string.summon_channel),
-                    NotificationManager.IMPORTANCE_LOW,
+                    NotificationManager.IMPORTANCE_MIN,
                 ).apply { setShowBadge(false) },
             )
         }
@@ -324,7 +407,7 @@ class ScribeAccessibilityService : AccessibilityService() {
             .setSilent(true)
             .setContentIntent(summon)
             .addAction(0, getString(R.string.summon_action), summon)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .build()
         runCatching { manager.notify(SUMMON_NOTIFICATION, notification) }
     }
@@ -344,6 +427,24 @@ class ScribeAccessibilityService : AccessibilityService() {
             if (intent?.action == ACTION_SUMMON) summon()
         }
     }
+
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    screenOn = false
+                    if (engine.isDictating) engine.cancelToggle()
+                    hideOverlay()
+                }
+                Intent.ACTION_SCREEN_ON -> {
+                    screenOn = true
+                    if (alwaysOn && !dismissedByUser) showOverlay()
+                }
+            }
+        }
+    }
+
+    @Volatile private var screenOn = true
 
     private fun hideOverlay() {
         val view = overlay ?: return
@@ -465,6 +566,9 @@ class ScribeAccessibilityService : AccessibilityService() {
 
         /** Long enough to ride out an app redrawing its view tree. */
         private const val HIDE_DEBOUNCE_MS = 700L
+
+        /** How close to the bottom counts as being over the dismiss target. */
+        private const val DISMISS_REACH_PX = 200
 
         private const val SUMMON_CHANNEL = "scribe-summon"
         private const val SUMMON_NOTIFICATION = 3
