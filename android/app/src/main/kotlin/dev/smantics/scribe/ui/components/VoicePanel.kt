@@ -32,7 +32,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -208,7 +207,8 @@ private fun InsertionFailed(
                 fontSize = 13.sp,
                 modifier = Modifier
                     .testTag("voice-insert-failed-text")
-                    .clip(RoundedCornerShape(ScribeTokens.radiusSm))
+                    // neuInset clips to the shape itself; a second clip here would be a
+                    // redundant layer around every one of these.
                     .neuInset(RoundedCornerShape(ScribeTokens.radiusSm), depth = 0.6f)
                     .fillMaxWidth()
                     .padding(horizontal = 10.dp, vertical = 8.dp),
