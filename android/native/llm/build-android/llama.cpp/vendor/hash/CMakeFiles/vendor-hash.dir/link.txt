@@ -1,0 +1,2 @@
+/usr/bin/ar qc libvendor-hash.a "CMakeFiles/vendor-hash.dir/hash.cpp.o" "CMakeFiles/vendor-hash.dir/xxhash/xxhash.c.o" "CMakeFiles/vendor-hash.dir/sha1/sha1.c.o" "CMakeFiles/vendor-hash.dir/sha256/sha256.c.o"
+/usr/bin/ranlib libvendor-hash.a

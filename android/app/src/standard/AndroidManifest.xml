@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      The only network the standard flavour has, and the only thing it is ever used for:
+      downloading a speech or polish model that the user explicitly asked for. Audio is
+      never sent anywhere. Every request made is listed in Settings under Network activity.
+      The airgap flavour does not declare this permission at all.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+</manifest>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Declares Scribe as a speech recogniser the system can offer to any keyboard or app.
+  The settings activity is Scribe itself, so the picker can link straight to it.
+-->
+<recognition-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity="dev.smantics.scribe.ui.MainActivity" />

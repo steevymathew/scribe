@@ -1,7 +1,9 @@
 .venv/
+.venv-*/
 __pycache__/
 *.pyc
 *.egg-info/
 dist/
 build/
 .env
+.claude/

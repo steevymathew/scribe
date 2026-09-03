@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Scribe declares one English subtype for now. The engine is multilingual (Whisper's
+  non-.en models are selectable in Settings); additional subtypes are added when the
+  language picker ships, so the system keyboard switcher never offers a language the
+  installed model cannot actually transcribe.
+-->
+<input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity="dev.smantics.scribe.ui.MainActivity"
+    android:supportsSwitchingToNextInputMethod="true">
+    <subtype
+        android:label="@string/ime_subtype_en"
+        android:imeSubtypeLocale="en_US"
+        android:imeSubtypeMode="keyboard"
+        android:isAsciiCapable="true" />
+</input-method>

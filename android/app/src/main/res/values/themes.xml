@@ -1,0 +1,12 @@
+<resources>
+    <!--
+      A holding theme for the window background only; everything visible is Compose.
+      The colour is Theme.qml's `bg` (#05070A) so the window does not flash white
+      before the first frame.
+    -->
+    <style name="Theme.Scribe" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/scribe_bg</item>
+        <item name="android:navigationBarColor">@color/scribe_bg</item>
+        <item name="android:statusBarColor">@color/scribe_bg</item>
+    </style>
+</resources>

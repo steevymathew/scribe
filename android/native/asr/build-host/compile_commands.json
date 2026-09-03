@@ -1,0 +1,158 @@
+[
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/cc -DGGML_COMMIT=\\\"48f628a8\\\" -DGGML_SCHED_MAX_COPIES=4 -DGGML_VERSION=\\\"0.15.1\\\" -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu11 -Wshadow -Wstrict-prototypes -Wpointer-arith -Wmissing-prototypes -Werror=implicit-int -Werror=implicit-function-declaration -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wdouble-promotion -o CMakeFiles/ggml-base.dir/ggml.c.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml.c",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml.c",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggml.c.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_COMMIT=\\\"48f628a8\\\" -DGGML_SCHED_MAX_COPIES=4 -DGGML_VERSION=\\\"0.15.1\\\" -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu++17 -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml-base.dir/ggml.cpp.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml.cpp",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml.cpp",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggml.cpp.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/cc -DGGML_COMMIT=\\\"48f628a8\\\" -DGGML_SCHED_MAX_COPIES=4 -DGGML_VERSION=\\\"0.15.1\\\" -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu11 -Wshadow -Wstrict-prototypes -Wpointer-arith -Wmissing-prototypes -Werror=implicit-int -Werror=implicit-function-declaration -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wdouble-promotion -o CMakeFiles/ggml-base.dir/ggml-alloc.c.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-alloc.c",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-alloc.c",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggml-alloc.c.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_COMMIT=\\\"48f628a8\\\" -DGGML_SCHED_MAX_COPIES=4 -DGGML_VERSION=\\\"0.15.1\\\" -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu++17 -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml-base.dir/ggml-backend.cpp.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-backend.cpp",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-backend.cpp",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggml-backend.cpp.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_COMMIT=\\\"48f628a8\\\" -DGGML_SCHED_MAX_COPIES=4 -DGGML_VERSION=\\\"0.15.1\\\" -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu++17 -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml-base.dir/ggml-backend-meta.cpp.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-backend-meta.cpp",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-backend-meta.cpp",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggml-backend-meta.cpp.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_COMMIT=\\\"48f628a8\\\" -DGGML_SCHED_MAX_COPIES=4 -DGGML_VERSION=\\\"0.15.1\\\" -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu++17 -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml-base.dir/ggml-opt.cpp.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-opt.cpp",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-opt.cpp",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggml-opt.cpp.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_COMMIT=\\\"48f628a8\\\" -DGGML_SCHED_MAX_COPIES=4 -DGGML_VERSION=\\\"0.15.1\\\" -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu++17 -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml-base.dir/ggml-threading.cpp.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-threading.cpp",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-threading.cpp",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggml-threading.cpp.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/cc -DGGML_COMMIT=\\\"48f628a8\\\" -DGGML_SCHED_MAX_COPIES=4 -DGGML_VERSION=\\\"0.15.1\\\" -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu11 -Wshadow -Wstrict-prototypes -Wpointer-arith -Wmissing-prototypes -Werror=implicit-int -Werror=implicit-function-declaration -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wdouble-promotion -o CMakeFiles/ggml-base.dir/ggml-quants.c.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-quants.c",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-quants.c",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggml-quants.c.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_COMMIT=\\\"48f628a8\\\" -DGGML_SCHED_MAX_COPIES=4 -DGGML_VERSION=\\\"0.15.1\\\" -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu++17 -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml-base.dir/gguf.cpp.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/gguf.cpp",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/gguf.cpp",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-base.dir/gguf.cpp.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/cc -DGGML_SCHED_MAX_COPIES=4 -DGGML_USE_CPU_REPACK -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/.. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu11 -Wshadow -Wstrict-prototypes -Wpointer-arith -Wmissing-prototypes -Werror=implicit-int -Werror=implicit-function-declaration -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wdouble-promotion -o CMakeFiles/ggml-cpu.dir/ggml-cpu/ggml-cpu.c.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/ggml-cpu.c",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/ggml-cpu.c",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/ggml-cpu.c.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_SCHED_MAX_COPIES=4 -DGGML_USE_CPU_REPACK -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/.. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu++17 -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml-cpu.dir/ggml-cpu/ggml-cpu.cpp.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/ggml-cpu.cpp",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/ggml-cpu.cpp",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/ggml-cpu.cpp.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_SCHED_MAX_COPIES=4 -DGGML_USE_CPU_REPACK -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/.. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu++17 -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml-cpu.dir/ggml-cpu/repack.cpp.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/repack.cpp",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/repack.cpp",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/repack.cpp.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_SCHED_MAX_COPIES=4 -DGGML_USE_CPU_REPACK -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/.. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu++17 -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml-cpu.dir/ggml-cpu/hbm.cpp.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/hbm.cpp",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/hbm.cpp",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/hbm.cpp.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/cc -DGGML_SCHED_MAX_COPIES=4 -DGGML_USE_CPU_REPACK -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/.. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu11 -Wshadow -Wstrict-prototypes -Wpointer-arith -Wmissing-prototypes -Werror=implicit-int -Werror=implicit-function-declaration -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wdouble-promotion -o CMakeFiles/ggml-cpu.dir/ggml-cpu/quants.c.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/quants.c",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/quants.c",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/quants.c.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_SCHED_MAX_COPIES=4 -DGGML_USE_CPU_REPACK -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/.. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu++17 -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml-cpu.dir/ggml-cpu/traits.cpp.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/traits.cpp",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/traits.cpp",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/traits.cpp.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_SCHED_MAX_COPIES=4 -DGGML_USE_CPU_REPACK -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/.. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu++17 -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml-cpu.dir/ggml-cpu/amx/amx.cpp.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/amx/amx.cpp",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/amx/amx.cpp",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/amx/amx.cpp.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_SCHED_MAX_COPIES=4 -DGGML_USE_CPU_REPACK -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/.. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu++17 -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml-cpu.dir/ggml-cpu/amx/mmq.cpp.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/amx/mmq.cpp",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/amx/mmq.cpp",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/amx/mmq.cpp.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_SCHED_MAX_COPIES=4 -DGGML_USE_CPU_REPACK -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/.. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu++17 -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml-cpu.dir/ggml-cpu/binary-ops.cpp.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/binary-ops.cpp",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/binary-ops.cpp",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/binary-ops.cpp.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_SCHED_MAX_COPIES=4 -DGGML_USE_CPU_REPACK -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/.. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu++17 -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml-cpu.dir/ggml-cpu/unary-ops.cpp.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/unary-ops.cpp",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/unary-ops.cpp",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/unary-ops.cpp.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_SCHED_MAX_COPIES=4 -DGGML_USE_CPU_REPACK -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/.. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu++17 -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml-cpu.dir/ggml-cpu/vec.cpp.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/vec.cpp",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/vec.cpp",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/vec.cpp.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_SCHED_MAX_COPIES=4 -DGGML_USE_CPU_REPACK -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/.. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu++17 -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml-cpu.dir/ggml-cpu/ops.cpp.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/ops.cpp",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/ops.cpp",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/ops.cpp.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/cc -DGGML_SCHED_MAX_COPIES=4 -DGGML_USE_CPU_REPACK -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/.. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu11 -Wshadow -Wstrict-prototypes -Wpointer-arith -Wmissing-prototypes -Werror=implicit-int -Werror=implicit-function-declaration -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wdouble-promotion -o CMakeFiles/ggml-cpu.dir/ggml-cpu/arch/arm/quants.c.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/arch/arm/quants.c",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/arch/arm/quants.c",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/arch/arm/quants.c.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_SCHED_MAX_COPIES=4 -DGGML_USE_CPU_REPACK -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/.. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu++17 -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml-cpu.dir/ggml-cpu/arch/arm/repack.cpp.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/arch/arm/repack.cpp",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-cpu/arch/arm/repack.cpp",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/arch/arm/repack.cpp.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_SCHED_MAX_COPIES=4 -DGGML_USE_CPU -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu++17 -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml.dir/ggml-backend-dl.cpp.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-backend-dl.cpp",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-backend-dl.cpp",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml.dir/ggml-backend-dl.cpp.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/ggml/src",
+  "command": "/usr/bin/c++ -DGGML_SCHED_MAX_COPIES=4 -DGGML_USE_CPU -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu++17 -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wno-array-bounds -Wextra-semi -o CMakeFiles/ggml.dir/ggml-backend-reg.cpp.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-backend-reg.cpp",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/ggml-backend-reg.cpp",
+  "output": "whisper.cpp/ggml/src/CMakeFiles/ggml.dir/ggml-backend-reg.cpp.o"
+},
+{
+  "directory": "/home/steevy/Development/claude/Scribe/android/native/asr/build-host/whisper.cpp/src",
+  "command": "/usr/bin/c++ -DGGML_USE_CPU -DWHISPER_VERSION=\\\"1.8.7\\\" -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/src/. -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/src/../include -I/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/ggml/src/../include -O3 -DNDEBUG -std=gnu++17 -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -o CMakeFiles/whisper.dir/whisper.cpp.o -c /home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/src/whisper.cpp",
+  "file": "/home/steevy/Development/claude/Scribe/android/third_party/whisper.cpp/src/whisper.cpp",
+  "output": "whisper.cpp/src/CMakeFiles/whisper.dir/whisper.cpp.o"
+}
+]

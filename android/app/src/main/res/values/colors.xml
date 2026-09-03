@@ -1,0 +1,10 @@
+<resources>
+    <color name="scribe_bg">#FF05070A</color>
+    <color name="scribe_accent">#FF34E4CE</color>
+    <!--
+      The launcher icon's ground. The Scribe mark is teal, white and black; on the app's
+      own near-black surface the black pen would disappear into it, so the icon sits on a
+      light neutral where all three read.
+    -->
+    <color name="scribe_icon_ground">#FFF4F7F9</color>
+</resources>

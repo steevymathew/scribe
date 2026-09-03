@@ -1,0 +1,14 @@
+local.properties
+.gradle/
+build/
+*/build/
+app/src/main/jniLibs/
+app/src/main/assets/models/
+native/build*/
+models/
+*.keystore
+*.jks
+keystore.properties
+fixtures/audio/
+dist/
+.kotlin/

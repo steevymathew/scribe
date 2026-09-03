@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# An x86-64 JVM, run under user-mode qemu on this aarch64 host.
+#
+# It exists for exactly one job: screenshot tests. Robolectric's native graphics runtime
+# and Paparazzi's layoutlib are published for x86-64 only, so on this machine there is no
+# other way to render a Compose screen to pixels — and the project's UX rules are explicit
+# that an interface nobody has seen rendered has not been verified.
+#
+# Ordinary unit tests do NOT go through this. They run on the host's own aarch64 JVM at
+# full speed; only the screenshot task pays the emulation cost.
+#
+# The rootfs is an x86-64 Temurin 17 image, extracted with `docker export` (which does not
+# run the container, so no binfmt registration and no root are involved). Recreate it with
+# tools/setup-screenshot-jvm.sh.
+set -euo pipefail
+ROOT="${SCRIBE_X86_JDK:-$HOME/.local/share/scribe/x86_64-jdk}"
+if [[ ! -x "$ROOT/opt/java/openjdk/bin/java" ]]; then
+  echo "x86-64 JDK not found at $ROOT — run tools/setup-screenshot-jvm.sh" >&2
+  exit 1
+fi
+exec "$HOME/.local/bin/qemu-x86_64-static" -L "$ROOT" "$ROOT/opt/java/openjdk/bin/java" "$@"

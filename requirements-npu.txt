@@ -1,0 +1,10 @@
+# NPU backend (Qualcomm Hexagon via ONNX Runtime QNN execution provider).
+# Native ARM64 — install into a separate venv (.venv-npu) using an ARM64 Python.
+# Whisper runs as ONNX models; the encoder is offloaded to the NPU, the decoder
+# runs on the native-ARM64 CPU. No torch, no ctranslate2, fully offline at runtime.
+onnxruntime-qnn>=1.20.0
+transformers>=4.40.0
+sounddevice>=0.5.0
+numpy>=1.26.0
+pynput>=1.7.7
+PySide6>=6.8  # UI (tray/overlay/settings)

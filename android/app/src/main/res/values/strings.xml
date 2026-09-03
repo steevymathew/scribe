@@ -1,0 +1,29 @@
+<resources>
+    <string name="app_name">Scribe</string>
+    <string name="ime_label">Scribe voice keyboard</string>
+    <string name="ime_subtype_en">English</string>
+
+    <string name="listening_channel">Dictation</string>
+    <string name="listening_channel_body">Shown while Scribe has the microphone open.</string>
+    <string name="listening_title">Scribe is listening</string>
+    <string name="listening_body">Your voice is being transcribed on this phone.</string>
+
+    <string name="bubble_channel">Floating button</string>
+    <string name="bubble_channel_body">Shown while the optional floating button is on screen.</string>
+    <string name="bubble_title">Scribe bubble is on</string>
+    <string name="bubble_body">Tap the bubble to dictate. The keyboard is the reliable option.</string>
+
+    <string name="voice_input_label">Scribe (on-device)</string>
+
+    <string name="a11y_description">Lets Scribe show a dictation button when you tap a text
+        box, and type what you say into it. Scribe checks whether the focused view accepts
+        text, and reads the field\'s contents only at the moment it inserts a transcript, so
+        it can place your words at the cursor without deleting what is already there.
+        Nothing is stored or sent anywhere.</string>
+    <string name="a11y_summary">Show a dictation button on text fields</string>
+
+    <string name="summon_channel">Scribe button</string>
+    <string name="summon_title">Scribe is ready</string>
+    <string name="summon_body">Tap to bring the dictation button back.</string>
+    <string name="summon_action">Show button</string>
+</resources>

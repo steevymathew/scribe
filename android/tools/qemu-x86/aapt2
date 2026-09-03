@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# aapt2 shim for ARM64 Linux hosts: Google ships aapt2 as x86-64 only, so run the
+# SDK's binary under user-mode qemu with a minimal x86-64 glibc sysroot.
+# Referenced by android.aapt2FromMavenOverride in gradle.properties.
+# Setup of qemu + sysroot: see tools/setup-android-env.sh and README.md.
+exec "$HOME/.local/bin/qemu-x86_64-static" \
+  -L "$HOME/.local/share/visear/x86_64-sysroot" \
+  "$HOME/Android/Sdk/build-tools/35.0.0/aapt2" "$@"
