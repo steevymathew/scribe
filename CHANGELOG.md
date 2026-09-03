@@ -3,6 +3,54 @@
 A dated record of what changed and when. Newest first. Times are local
 (America/Chicago). This log is maintained by hand alongside the git history.
 
+## Android — `android` branch
+
+The Android port has its own docs (`android/README.md`, `android/docs/`); this section
+records what shipped and when, so the history is legible from the root of the project.
+
+### 2026-09-03 — v0.7.0: the bubble types, and the keyboard settles
+
+- **The bubble now puts words in the field.** It never did. Insertion had exactly one way
+  to find the target — `findFocus(FOCUS_INPUT)` — one way to write to it, and no way to
+  report that either had failed: the exception was swallowed, the panel collapsed on its
+  way back to idle, and a dictation that went nowhere looked identical to one that worked.
+  Finding the field is now a cascade of five strategies (the service's focus, the active
+  window's own, every other window, a walk for a focused field, and the only field on
+  screen); the write is attempted twice, asking for focus first, because several toolkits
+  refuse `ACTION_SET_TEXT` on a node they do not consider focused; and the whole thing runs
+  on the service's thread instead of the reveal's timer thread. **A failure is now
+  visible** — the panel stays open with the transcript still in it, names the reason, and
+  offers to try again. Every outcome logs under `ScribeA11y`.
+- **Where the text goes is now testable.** The splice — read the field, insert at the
+  cursor, write the whole thing back — moved to `core` as `TextSplice`, with twelve tests.
+  It picked up two fixes on the way: a selection reported back-to-front no longer leaves
+  the selected phrase in place, and a transcript spliced mid-sentence no longer welds
+  itself onto the word after the cursor.
+- **The bubble knew which app it was typing into and then stopped.** Persistent mode
+  returned before the line that recorded it, so every bubble dictation since had been
+  cleaned with the neutral tone profile.
+- **The keyboard's show and hide are smooth.** Four causes, all in the same place: the
+  waveform ran three infinite animations *continuously* whatever the state, so the panel
+  never stopped producing frames and both window animations dropped frames underneath it;
+  the neumorphic surfaces rebuilt two gradient shaders per element per frame, eighty a
+  frame with the letters up; the Compose lifecycle was paused in `onFinishInputView`, part
+  way through the hide, and replayed everything it had missed into the first frame of the
+  next show; and the panel's height came from DataStore a frame or two late, so a keyboard
+  with the letters up opened short and then grew.
+- Accessibility nodes are no longer recycled: `recycle()` has been a documented no-op since
+  API 33, which is Scribe's minimum.
+- The privacy test that pins network access to one file now strips comments before it
+  scans, so prose can name a `WebView` without failing the build.
+- 203 tests, all green, none needing a device. Hardware behaviour remains OWNER-VERIFY —
+  `android/docs/OWNER-VERIFY.md` has the v0.7.0 script.
+
+### 2026-09-01/02 — v0.1.0 to v0.6.0
+
+The port itself: engine core and native ASR/LLM, the keyboard, measured accuracy, settings
+screens and a signed release, the voice-input service, the floating bubble, a keyboard that
+types, the Raw/Clean reveal, and the landscape and setup fixes. See the git log on the
+`android` branch and `android/docs/`.
+
 ## Unreleased — `v1-polish` branch
 
 ### 2026-07-09 (later still)

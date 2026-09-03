@@ -3,7 +3,7 @@ package dev.smantics.scribe.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -25,6 +25,13 @@ import dev.smantics.scribe.ui.theme.ScribeTokens
  * can see the shape" and "this is a smudge", and the desktop build's rule that depth is a
  * scarce signal still applies — these are for the two controls that are meant to feel
  * physical, the microphone and the bubble, not for every surface in the app.
+ *
+ * **The gradients are built in [drawWithCache], not in the draw pass.** A `Brush` caches
+ * the shader it compiles, keyed by the size it was asked to fill — so a brush constructed
+ * inside `drawWithContent` throws that cache away and compiles a new shader on every
+ * frame. With forty keys on screen that is eighty shaders a frame, which is what made the
+ * keyboard's own show and hide animations stutter. `drawWithCache` rebuilds them only
+ * when the element changes size.
  */
 
 /**
@@ -42,31 +49,25 @@ fun Modifier.neuInset(
     // The well is slightly darker than the surround; that difference alone carries most
     // of the effect, and the gradients only shape it.
     .background(ScribeTokens.bg.copy(alpha = 0.55f).compositeOver(surface))
-    .drawWithContent {
+    .drawWithCache {
         val far = maxOf(size.width, size.height)
         // Top-left: the shadow cast by the rim nearest the light.
-        drawRect(
-            brush = Brush.linearGradient(
-                colors = listOf(
-                    Color.Black.copy(alpha = 0.55f * depth),
-                    Color.Transparent,
-                ),
-                start = Offset.Zero,
-                end = Offset(far * 0.62f, far * 0.62f),
-            ),
+        val near = Brush.linearGradient(
+            colors = listOf(Color.Black.copy(alpha = 0.55f * depth), Color.Transparent),
+            start = Offset.Zero,
+            end = Offset(far * 0.62f, far * 0.62f),
         )
         // Bottom-right: the lit far wall.
-        drawRect(
-            brush = Brush.linearGradient(
-                colors = listOf(
-                    Color.Transparent,
-                    Color.White.copy(alpha = 0.07f * depth),
-                ),
-                start = Offset(size.width * 0.42f, size.height * 0.42f),
-                end = Offset(size.width, size.height),
-            ),
+        val lit = Brush.linearGradient(
+            colors = listOf(Color.Transparent, Color.White.copy(alpha = 0.07f * depth)),
+            start = Offset(size.width * 0.42f, size.height * 0.42f),
+            end = Offset(size.width, size.height),
         )
-        drawContent()
+        onDrawWithContent {
+            drawRect(brush = near)
+            drawRect(brush = lit)
+            drawContent()
+        }
     }
 
 /** A shape standing *proud of* the surface — the same light, the other way round. */
@@ -77,29 +78,23 @@ fun Modifier.neuRaised(
 ): Modifier = this
     .clip(shape)
     .background(surface)
-    .drawWithContent {
+    .drawWithCache {
         val far = maxOf(size.width, size.height)
-        drawRect(
-            brush = Brush.linearGradient(
-                colors = listOf(
-                    Color.White.copy(alpha = 0.09f * depth),
-                    Color.Transparent,
-                ),
-                start = Offset.Zero,
-                end = Offset(far * 0.55f, far * 0.55f),
-            ),
+        val lit = Brush.linearGradient(
+            colors = listOf(Color.White.copy(alpha = 0.09f * depth), Color.Transparent),
+            start = Offset.Zero,
+            end = Offset(far * 0.55f, far * 0.55f),
         )
-        drawRect(
-            brush = Brush.linearGradient(
-                colors = listOf(
-                    Color.Transparent,
-                    Color.Black.copy(alpha = 0.42f * depth),
-                ),
-                start = Offset(size.width * 0.45f, size.height * 0.45f),
-                end = Offset(size.width, size.height),
-            ),
+        val shade = Brush.linearGradient(
+            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.42f * depth)),
+            start = Offset(size.width * 0.45f, size.height * 0.45f),
+            end = Offset(size.width, size.height),
         )
-        drawContent()
+        onDrawWithContent {
+            drawRect(brush = lit)
+            drawRect(brush = shade)
+            drawContent()
+        }
     }
 
 /**
@@ -115,21 +110,21 @@ fun Modifier.neuActive(
 ): Modifier = this
     .clip(shape)
     .background(tint.copy(alpha = 0.16f).compositeOver(ScribeTokens.s2))
-    .drawWithContent {
+    .drawWithCache {
         val far = maxOf(size.width, size.height)
-        drawRect(
-            brush = Brush.linearGradient(
-                colors = listOf(tint.copy(alpha = 0.22f * depth), Color.Transparent),
-                start = Offset.Zero,
-                end = Offset(far * 0.6f, far * 0.6f),
-            ),
+        val glow = Brush.linearGradient(
+            colors = listOf(tint.copy(alpha = 0.22f * depth), Color.Transparent),
+            start = Offset.Zero,
+            end = Offset(far * 0.6f, far * 0.6f),
         )
-        drawRect(
-            brush = Brush.linearGradient(
-                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.35f * depth)),
-                start = Offset(size.width * 0.5f, size.height * 0.5f),
-                end = Offset(size.width, size.height),
-            ),
+        val shade = Brush.linearGradient(
+            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.35f * depth)),
+            start = Offset(size.width * 0.5f, size.height * 0.5f),
+            end = Offset(size.width, size.height),
         )
-        drawContent()
+        onDrawWithContent {
+            drawRect(brush = glow)
+            drawRect(brush = shade)
+            drawContent()
+        }
     }

@@ -165,3 +165,76 @@ never started and nothing drew.
       on a light tile, and the same mark should appear in the app header and on the
       collapsed bubble. Tell me if the light tile looks wrong against your wallpaper; a
       dark ground is a one-line change.
+
+---
+
+# v0.7.0 — the bubble types, and the keyboard settles
+
+Two things were reported from the phone and both are fixed below. Neither fix could be
+tested here: one needs another app's text field, the other needs eyes on a real animation.
+
+**Uninstall 0.6.0 first.** Same key, but the accessibility service's state is worth
+starting clean.
+
+## 1 · The bubble actually putting words in the field
+
+This is the one that matters. The report was: *"it writes it in the bubble but never puts
+the text into the text field, and the insert button just shrinks the bubble back down."*
+Both halves were the same fault — insertion failed, the exception was swallowed, and the
+panel collapsed exactly as it does on success.
+
+- [ ] Open a chat or notes app, tap a text field, and dictate through the bubble.
+      **The words should land at the cursor.**
+- [ ] With a half-written message and the cursor in the middle of it, dictate again.
+      Nothing already in the field should be lost, and the new words should not be welded
+      onto the ones on either side of the cursor.
+- [ ] Dictate twice in a row without moving the cursor. Two sentences, one space between
+      them — not `one.Two.`
+- [ ] Try it in something that is not a plain `EditText`: a browser's address bar, a
+      WebView-based app, Samsung's own Messages. These are the cases where finding the
+      field takes more than one attempt.
+
+**If it still does not go in**, the panel now says so rather than closing. Send back:
+
+- what the red line in the panel says — it names the actual reason
+- `adb logcat -s ScribeA11y -s ScribeEngine -d > scribe-insert.txt`
+
+Those two together say which step failed. The lines to look for:
+
+| Line | What it means |
+|---|---|
+| `inserted N characters into <package>` | it worked |
+| `could not insert: no text field has focus` | nothing on screen was reachable and editable — the field-finding cascade came back empty |
+| `could not insert: this app would not accept typed text` | the field was found and the app refused `ACTION_SET_TEXT` |
+| `could not insert: the app did not answer in time` | the app did not respond within 2.5 s |
+| `the field still reads as it did before the write` | the app said yes and then kept its own text — the interesting one, and the only case with no fix in Scribe |
+| `nothing to insert (empty=…, sink=…)` | the transcript never reached the insertion path at all |
+
+- [ ] When it fails, the transcript is still on screen and **"Tap the field, then try
+      again"** is offered. Tap into the field, press it — does the text go in on the second
+      attempt? If it does, the cause is focus being lost during the reveal, and that is
+      worth knowing.
+
+## 2 · The keyboard coming up and going down
+
+Four things were changed, all of which show up in the same place — the show and hide
+animation — so this is one observation, not four:
+
+- [ ] Open and close the keyboard a dozen times in a row. It should slide up and down
+      cleanly, with no stutter and **no jump in height** part-way through.
+- [ ] Do it with the letters showing, and again with them hidden. The letters case is the
+      one that used to open short and then grow: the panel now knows its own height before
+      it draws its first frame.
+- [ ] Watch the panel while it slides *away*. It used to freeze part-way down.
+- [ ] Leave the keyboard open and idle for a minute, then check the battery figure in
+      Settings → Battery → Scribe. Nothing should accumulate: the panel now stops drawing
+      frames when nothing is animating, where before the waveform kept it redrawing at
+      display rate forever, open or not.
+- [ ] Type a fast sentence on the letters. Any input lag?
+
+## 3 · Nothing else should have moved
+
+- [ ] Dictation through the keyboard still inserts at the cursor.
+- [ ] The Raw/Clean toggle still re-renders text already inserted (keyboard only).
+- [ ] The bubble still drags, still drops onto the target to dismiss, and the notification
+      still brings it back.

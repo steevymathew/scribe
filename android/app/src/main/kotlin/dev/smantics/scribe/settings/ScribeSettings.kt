@@ -143,6 +143,20 @@ data class ScribeConfig(
         dictionary.values.distinct().takeIf { it.isNotEmpty() }?.joinToString(", ")
 }
 
+/**
+ * The handful of values the keyboard has to know *before* it draws its first frame.
+ *
+ * DataStore is asynchronous by design, and that is right for everything except layout:
+ * the panel was composing with the defaults, then re-composing a frame or two later when
+ * the real settings arrived, so a user who kept the letters up saw the keyboard open
+ * short and then grow — the window resizing under the app mid-animation. There is no
+ * amount of animation tuning that fixes a first frame with the wrong height in it.
+ */
+data class LayoutSnapshot(
+    val keyboardShown: Boolean,
+    val handedness: Handedness,
+)
+
 class SettingsRepository(private val context: Context) {
 
     val config: Flow<ScribeConfig> = context.dataStore.data
@@ -152,9 +166,38 @@ class SettingsRepository(private val context: Context) {
         }
         .map { it.toConfig() }
 
+    /**
+     * A synchronous mirror of the layout settings, for [LayoutSnapshot].
+     *
+     * Deliberately a plain SharedPreferences file and not a second source of truth:
+     * DataStore remains the record, this is written through on every change, and nothing
+     * ever reads it except the keyboard's first frame. If it is missing or stale by one
+     * change the panel simply opens the way it did last time, which is the same thing the
+     * user saw a moment ago and never worse than the default.
+     */
+    private val layoutMirror by lazy {
+        context.getSharedPreferences(LAYOUT_MIRROR, Context.MODE_PRIVATE)
+    }
+
+    /** Read on the main thread, in the microseconds before the panel is composed. */
+    val layoutSnapshot: LayoutSnapshot
+        get() {
+            val defaults = ScribeConfig()
+            return LayoutSnapshot(
+                keyboardShown = layoutMirror.getBoolean(M_KEYS_SHOWN, defaults.keyboardShown),
+                handedness = layoutMirror.getString(M_HANDEDNESS, null)
+                    ?.let { runCatching { Handedness.valueOf(it) }.getOrNull() }
+                    ?: defaults.handedness,
+            )
+        }
+
     suspend fun update(transform: (ScribeConfig) -> ScribeConfig) {
         context.dataStore.edit { prefs ->
             val next = transform(prefs.toConfig())
+            layoutMirror.edit()
+                .putBoolean(M_KEYS_SHOWN, next.keyboardShown)
+                .putString(M_HANDEDNESS, next.handedness.name)
+                .apply()
             prefs[K_MODEL] = next.model
             prefs[K_HEAVY_MODEL] = next.heavyModel
             prefs[K_LANGUAGE] = next.language
@@ -222,6 +265,11 @@ class SettingsRepository(private val context: Context) {
     }
 
     private companion object {
+        /** The synchronous layout mirror; see [layoutMirror]. */
+        const val LAYOUT_MIRROR = "scribe-layout"
+        const val M_KEYS_SHOWN = "keyboard_shown"
+        const val M_HANDEDNESS = "handedness"
+
         val K_MODEL = stringPreferencesKey("model")
         val K_HEAVY_MODEL = stringPreferencesKey("heavy_model")
         val K_LANGUAGE = stringPreferencesKey("language")

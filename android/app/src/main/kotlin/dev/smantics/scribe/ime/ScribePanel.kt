@@ -395,16 +395,10 @@ private fun MicToggle(state: EngineState, onToggle: () -> Unit) {
     val listening = state.stage == DictationStage.LISTENING
     val finishing = state.stage != DictationStage.IDLE && !listening
 
-    val transition = rememberInfiniteTransition(label = "mic")
-    val pulse by transition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (listening) 1.1f else 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(ScribeMotion.PULSE_RING),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "mic-pulse",
-    )
+    // Composed only while it is actually breathing. An infinite transition holds the frame
+    // clock open for as long as it exists, so one that animates 1f to 1f is not free — it
+    // is a keyboard that never stops drawing. See the note in Waveform.
+    val pulse = if (listening) micPulse() else 1f
 
     val tint = when {
         listening -> ScribeTokens.accent
@@ -441,6 +435,22 @@ private fun MicToggle(state: EngineState, onToggle: () -> Unit) {
             thickness = 2.dp,
         )
     }
+}
+
+/** The slow breath the microphone takes while it is listening, and only then. */
+@Composable
+private fun micPulse(): Float {
+    val transition = rememberInfiniteTransition(label = "mic")
+    val pulse by transition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(ScribeMotion.PULSE_RING),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "mic-pulse",
+    )
+    return pulse
 }
 
 @Composable

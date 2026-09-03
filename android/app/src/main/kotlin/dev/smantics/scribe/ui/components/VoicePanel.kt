@@ -69,6 +69,17 @@ fun VoicePanel(
     onCollapse: () -> Unit,
     onOpenApp: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * Why the transcript could not be typed into the field, or null.
+     *
+     * Present, it takes over the panel: the words are still here, and there is a way to
+     * try again. The version this replaced closed the panel on failure exactly as it did
+     * on success, so a dictation that went nowhere was indistinguishable from one that
+     * worked — right up until the user looked at the empty field.
+     */
+    failure: String? = null,
+    onRetryInsert: () -> Unit = {},
+    onDismissFailure: () -> Unit = {},
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
@@ -106,7 +117,14 @@ fun VoicePanel(
         // The transcript, and the cleanup happening to it. This is the point of the
         // panel: the bubble exists so there is something to press, and this is what makes
         // pressing it worth watching.
-        if (state.stage != DictationStage.IDLE) {
+        if (failure != null) {
+            InsertionFailed(
+                reason = failure,
+                text = state.lastText,
+                onRetry = onRetryInsert,
+                onDismiss = onDismissFailure,
+            )
+        } else if (state.stage != DictationStage.IDLE) {
             TranscriptReveal(
                 stage = state.stage,
                 partialText = state.partialText,
@@ -156,6 +174,58 @@ fun VoicePanel(
     }
 }
 
+/**
+ * What to show when the words could not be typed into the field.
+ *
+ * Three things, in this order: that it did not work, **the transcript itself** so nothing
+ * spoken is lost, and one button to try again — which is usually all it takes, because the
+ * common cause is the field having lost focus while the reveal was running. Tapping back
+ * into the field and pressing this puts the sentence where it was meant to go.
+ */
+@Composable
+private fun InsertionFailed(
+    reason: String,
+    text: String,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Column(
+        Modifier
+            .testTag("voice-insert-failed")
+            .fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            "Couldn't put that in the field — $reason.",
+            color = ScribeTokens.rec,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        if (text.isNotEmpty()) {
+            Text(
+                text,
+                color = ScribeTokens.text,
+                fontSize = 13.sp,
+                modifier = Modifier
+                    .testTag("voice-insert-failed-text")
+                    .clip(RoundedCornerShape(ScribeTokens.radiusSm))
+                    .neuInset(RoundedCornerShape(ScribeTokens.radiusSm), depth = 0.6f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(ScribeTokens.gapSmall)) {
+            SecondaryButton(
+                "Tap the field, then try again",
+                "voice-retry-insert",
+                tint = ScribeTokens.accent,
+                onClick = onRetry,
+            )
+            SecondaryButton("Discard", "voice-dismiss-failure", onClick = onDismiss)
+        }
+    }
+}
+
 @Composable
 private fun MenuRow(label: String, value: String) {
     Row(
@@ -194,16 +264,9 @@ private fun CollapseButton(onCollapse: () -> Unit) {
 private fun InsertButton(state: EngineState, onStop: () -> Unit) {
     val pulsing = state.status == DictationStatus.RECORDING ||
         state.status == DictationStatus.TRANSCRIBING
-    val transition = rememberInfiniteTransition(label = "voice-dot")
-    val alpha by transition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (pulsing) 0.35f else 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(ScribeMotion.DOT_PULSE),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "voice-dot-alpha",
-    )
+    // Only composed while it pulses: an infinite transition keeps the frame clock awake
+    // for as long as it exists, and this panel sits over whatever the user is writing in.
+    val alpha = if (pulsing) dotPulse() else 1f
     val listening = state.stage == DictationStage.LISTENING
     Box(
         Modifier
@@ -233,6 +296,22 @@ private fun InsertButton(state: EngineState, onStop: () -> Unit) {
             thickness = 1.8.dp,
         )
     }
+}
+
+/** The breath the button takes while Scribe is hearing or decoding, and only then. */
+@Composable
+private fun dotPulse(): Float {
+    val transition = rememberInfiniteTransition(label = "voice-dot")
+    val alpha by transition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.35f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(ScribeMotion.DOT_PULSE),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "voice-dot-alpha",
+    )
+    return alpha
 }
 
 @Composable

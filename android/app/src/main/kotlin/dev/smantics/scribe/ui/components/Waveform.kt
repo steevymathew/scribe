@@ -59,38 +59,25 @@ fun Waveform(
         stage == DictationStage.PUNCTUATING ||
         stage == DictationStage.FINAL
 
-    val transition = rememberInfiniteTransition(label = "waveform")
-
-    // One sweep of the scanner, and one slow breath. Both run continuously; only the
-    // stage decides which is drawn, so switching between them costs nothing.
-    val sweep by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(animation = tween(900), repeatMode = RepeatMode.Restart),
-        label = "sweep",
-    )
-    val breath by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(animation = tween(1400), repeatMode = RepeatMode.Reverse),
-        label = "breath",
-    )
-    // Drives the per-bar jitter while listening, so the shape moves as a voice does
-    // rather than every bar rising and falling together.
-    val churn by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 100f,
-        animationSpec = infiniteRepeatable(animation = tween(3000), repeatMode = RepeatMode.Restart),
-        label = "churn",
-    )
+    // **Only while something is actually happening.** An infinite transition subscribes to
+    // the frame clock and never lets go, so leaving these running when the meter is at
+    // rest kept the whole surface producing frames forever. In the keyboard — where this
+    // strip is always on screen — that meant the panel was recomposing and redrawing at
+    // display rate while the window was still sliding into place, and the show and hide
+    // animations dropped frames for it. Composing the transitions only when the stage
+    // needs them lets the panel go idle, which is what makes it settle smoothly.
+    val motion = if (listening || transcribing || settling) waveMotion() else WaveMotion.STILL
 
     // Smoothed so the meter reads as a voice rather than as noise, but only just: too much
-    // smoothing and it stops tracking syllables.
+    // smoothing and it stops tracking syllables. This one is finite — it settles and stops.
     val smoothed by animateFloatAsState(
         targetValue = if (listening) level else 0f,
         animationSpec = tween(durationMillis = ScribeMotion.LEVEL_BAR),
         label = "level",
     )
+    val sweep = motion.sweep
+    val breath = motion.breath
+    val churn = motion.churn
 
     val tint = if (boostActive) ScribeTokens.warn else ScribeTokens.accent
     val activeColour = when {
@@ -157,4 +144,50 @@ fun Waveform(
             }
         }
     }
+}
+
+
+/**
+ * The three continuous motions the meter can be driven by, sampled for one frame.
+ *
+ * Held in a value class rather than read straight from the transition so that [Waveform]
+ * can swap in [STILL] and drop the animations out of the composition entirely when there
+ * is nothing to animate.
+ */
+private data class WaveMotion(val sweep: Float, val breath: Float, val churn: Float) {
+    companion object {
+        /** What the meter looks like when nothing is running: a still, low profile. */
+        val STILL = WaveMotion(sweep = 0f, breath = 0f, churn = 0f)
+    }
+}
+
+/**
+ * Start the continuous motions, for exactly as long as this is composed.
+ *
+ * One sweep of the scanner, one slow breath, and a slow churn that jitters the bars
+ * individually while listening so the shape moves as a voice does rather than every bar
+ * rising and falling together.
+ */
+@Composable
+private fun waveMotion(): WaveMotion {
+    val transition = rememberInfiniteTransition(label = "waveform")
+    val sweep by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(animation = tween(900), repeatMode = RepeatMode.Restart),
+        label = "sweep",
+    )
+    val breath by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(animation = tween(1400), repeatMode = RepeatMode.Reverse),
+        label = "breath",
+    )
+    val churn by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 100f,
+        animationSpec = infiniteRepeatable(animation = tween(3000), repeatMode = RepeatMode.Restart),
+        label = "churn",
+    )
+    return WaveMotion(sweep = sweep, breath = breath, churn = churn)
 }

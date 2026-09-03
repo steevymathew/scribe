@@ -11,3 +11,4 @@ models/
 keystore.properties
 fixtures/audio/
 dist/
+.kotlin/

@@ -57,6 +57,14 @@ class ScribeInputMethodService : InputMethodService() {
         host.onCreate()
         engine = ScribeEngine.get(this)
         engine.warmUp()
+        // Seeded synchronously so the *first* frame is the right height. Settings arrive
+        // from DataStore a frame or two later, and starting from the defaults meant a
+        // keyboard that opened short and then grew while the window was still animating
+        // into place. See SettingsRepository.layoutSnapshot.
+        engine.settings.layoutSnapshot.let {
+            handedness.value = it.handedness
+            keysShown.value = it.keyboardShown
+        }
         scope.launch {
             engine.settings.config.collect {
                 handedness.value = it.handedness
@@ -71,7 +79,8 @@ class ScribeInputMethodService : InputMethodService() {
      * The owners are applied to the window's decor as well as to the ComposeView, and the
      * lifecycle is moved to RESUMED here rather than waiting for `onStartInputView` —
      * Compose's frame clock starts paused and only runs from `ON_START`, so a host still
-     * at CREATED composes and then draws nothing at all.
+     * at CREATED composes and then draws nothing at all. Resuming this early also means
+     * the first frame is composed before the show animation starts rather than during it.
      *
      * The whole thing is wrapped. If composition cannot start, the alternative to a
      * fallback view is an input method that is listed, can be enabled, and silently never
@@ -176,10 +185,31 @@ class ScribeInputMethodService : InputMethodService() {
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
-        host.onPause()
         // Abandon any decode in flight. The user has moved on; making them wait for a
         // transcript they will never see would only cost battery.
         engine.detach()
+    }
+
+    /**
+     * The lifecycle follows the *window*, not the input session.
+     *
+     * This used to be paused in `onFinishInputView`, which fires before the keyboard has
+     * finished sliding away — so Compose's frame clock stopped part-way through the hide
+     * animation and the panel froze on screen for the rest of it. Worse in the other
+     * direction: a paused host queues up every state change it missed and replays them in
+     * the first frame after resuming, which is exactly the frame the show animation needs.
+     *
+     * `onWindowShown` and `onWindowHidden` bracket the animations properly, so frames run
+     * for the whole of both and stop only when the panel is genuinely off screen.
+     */
+    override fun onWindowShown() {
+        super.onWindowShown()
+        host.onResume()
+    }
+
+    override fun onWindowHidden() {
+        super.onWindowHidden()
+        host.onPause()
     }
 
     override fun onDestroy() {

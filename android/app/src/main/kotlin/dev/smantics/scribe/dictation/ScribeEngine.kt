@@ -544,11 +544,22 @@ class ScribeEngine private constructor(private val appContext: Context) {
             sinkBeforeToggle = null
             if (cleaned.isNotEmpty() && target != null) {
                 runCatching { target.commit(cleaned) }.onFailure {
+                    // Named, not generic. "Could not type into this field" was true of
+                    // every failure and told nobody which one had happened; the surface
+                    // that asked for the text is the one that knows why it would not go
+                    // in, so its reason is what the user is shown.
                     _state.value = _state.value.copy(
                         status = DictationStatus.ERROR,
-                        statusDetail = "Could not type into this field",
+                        statusDetail = it.message?.takeIf(String::isNotBlank)
+                            ?.replaceFirstChar(Char::uppercase)
+                            ?: "Could not type into this field",
                     )
                 }
+            } else {
+                // Logged because the two ways nothing appears in the field look identical
+                // from outside: the text was never delivered, or it was refused. Only one
+                // of them leaves a line here. See docs/OWNER-VERIFY.md.
+                Log.i(TAG, "nothing to insert (empty=${cleaned.isEmpty()}, sink=${target != null})")
             }
             _state.value = _state.value.copy(
                 stage = DictationStage.IDLE,

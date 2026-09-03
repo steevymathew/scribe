@@ -67,12 +67,7 @@ class PrivacyPromiseTest {
         val callSites = sourceRoots
             .filter { it.isDirectory }
             .flatMap { root -> root.walkTopDown().filter { it.isFile && it.extension == "kt" } }
-            .filter { file ->
-                file.readLines().any { line ->
-                    val code = line.substringBefore("//")
-                    !code.trimStart().startsWith("import") && networkApis.containsMatchIn(code)
-                }
-            }
+            .filter { file -> networkApis.containsMatchIn(codeOnly(file.readText())) }
             .map { it.name }
             .toSet()
 
@@ -83,6 +78,22 @@ class PrivacyPromiseTest {
             callSites,
         )
     }
+
+    /**
+     * The source with its comments and imports taken out.
+     *
+     * Prose has to be able to name these APIs — explaining *why* a piece of code does not
+     * use a WebView is exactly the kind of comment worth having — and a mention in a
+     * doc comment is not a call site. Stripping comments before the scan makes the check
+     * strictly more precise rather than less: nothing that can open a connection lives
+     * inside `/* */`.
+     */
+    private fun codeOnly(source: String): String = source
+        .replace(Regex("""/\*.*?\*/""", RegexOption.DOT_MATCHES_ALL), " ")
+        .lines()
+        .map { it.substringBefore("//") }
+        .filterNot { it.trimStart().startsWith("import ") }
+        .joinToString("\n")
 
     /**
      * The airgap flavour's whole argument is that it *cannot* reach a network, which is a

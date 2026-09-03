@@ -10,12 +10,16 @@ import android.content.IntentFilter
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -31,6 +35,7 @@ import androidx.core.content.ContextCompat
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import dev.smantics.scribe.R
 import dev.smantics.scribe.core.dictation.TextSink
+import dev.smantics.scribe.core.dictation.TextSplice
 import dev.smantics.scribe.dictation.DictationStage
 import dev.smantics.scribe.dictation.ScribeEngine
 import dev.smantics.scribe.ime.ImeComposeHost
@@ -46,6 +51,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * The floating bubble, and the thing that knows when to show it.
@@ -154,6 +162,12 @@ class ScribeAccessibilityService : AccessibilityService() {
         // losing the control you are speaking into is worse than it lingering a moment.
         if (engine.isDictating || expanded) return
 
+        // Noted whatever mode the bubble is in. This used to sit below the persistent-mode
+        // branch, which returns — so once the bubble became always-on nothing recorded the
+        // focused app at all, and every dictation through the bubble was cleaned with the
+        // neutral tone profile regardless of what it was being typed into.
+        noteFocus()
+
         // Kept up regardless of what has focus.
         //
         // Focus detection turned out to be the wrong thing to hang this on: apps report
@@ -167,13 +181,12 @@ class ScribeAccessibilityService : AccessibilityService() {
             return
         }
 
+        // Nodes are not recycled anywhere in this file. `recycle()` has been a documented
+        // no-op since API 33, which is Scribe's minimum, and calling it bought nothing but
+        // a chance of touching a node the framework had already taken back.
         if (dismissedUntilNextField) {
             val stillEditable = runCatching {
-                findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let { node ->
-                    val editable = node.isEditable
-                    node.recycle()
-                    editable
-                }
+                findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.isEditable
             }.getOrNull() ?: false
             if (!stillEditable) dismissedUntilNextField = false
             return
@@ -182,7 +195,6 @@ class ScribeAccessibilityService : AccessibilityService() {
         val node = runCatching { findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }.getOrNull()
         val editable = node != null && node.isEditable && node.isVisibleToUser
         focusedPackage = node?.packageName?.toString()
-        node?.recycle()
 
         if (editable) {
             // Showing is immediate; hiding is not. Apps churn their view trees constantly,
@@ -201,6 +213,25 @@ class ScribeAccessibilityService : AccessibilityService() {
     }
 
     private var hideJob: Job? = null
+
+    /**
+     * Remember which app owns the field that currently has focus.
+     *
+     * Used for one thing — choosing the tone profile the Clean pipeline runs with. Nothing
+     * about the field's *contents* is read here.
+     *
+     * Rate-limited because the event stream it hangs off fires on every content change in
+     * every app on screen, and each call is a round trip into the focused app's process.
+     */
+    private fun noteFocus() {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastFocusNote < FOCUS_NOTE_INTERVAL_MS) return
+        lastFocusNote = now
+        val node = runCatching { findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }.getOrNull()
+        if (node != null && node.isEditable) focusedPackage = node.packageName?.toString()
+    }
+
+    @Volatile private var lastFocusNote = 0L
 
     /** Set when the user closes the bubble; cleared once they touch a different field. */
     @Volatile private var dismissedUntilNextField = false
@@ -242,9 +273,15 @@ class ScribeAccessibilityService : AccessibilityService() {
             setContent {
                 val state by engine.state.collectAsState()
                 ScribeTheme {
-                    // Collapse once the whole sequence, insertion included, is over.
-                    LaunchedEffect(state.stage) {
-                        if (state.stage == DictationStage.IDLE && !engine.isDictating) {
+                    // Collapse once the whole sequence, insertion included, is over —
+                    // unless it did not work. A panel that closes on failure exactly as it
+                    // closes on success is how this bug stayed invisible: the words were
+                    // shown being assembled and then the bubble simply shrank.
+                    LaunchedEffect(state.stage, insertFailure) {
+                        if (state.stage == DictationStage.IDLE &&
+                            !engine.isDictating &&
+                            insertFailure == null
+                        ) {
                             expanded = false
                         }
                     }
@@ -254,12 +291,23 @@ class ScribeAccessibilityService : AccessibilityService() {
                             modelLabel = modelLabelFor(state),
                             onToggleMode = { engine.toggleMode() },
                             onStop = { stopDictation() },
-                            onCancel = { engine.cancelToggle(); expanded = false },
+                            onCancel = {
+                                engine.cancelToggle()
+                                insertFailure = null
+                                expanded = false
+                            },
                             onCollapse = {
                                 if (engine.isDictating) engine.cancelToggle()
+                                insertFailure = null
                                 expanded = false
                             },
                             onOpenApp = { openApp() },
+                            failure = insertFailure,
+                            onRetryInsert = { retryInsert() },
+                            onDismissFailure = {
+                                insertFailure = null
+                                expanded = false
+                            },
                         )
                     } else {
                         VoiceBubble(
@@ -451,6 +499,7 @@ class ScribeAccessibilityService : AccessibilityService() {
         overlay = null
         overlayParams = null
         expanded = false
+        insertFailure = null
         runCatching { windowManager?.removeView(view) }
     }
 
@@ -464,6 +513,9 @@ class ScribeAccessibilityService : AccessibilityService() {
      */
     private fun startDictation() {
         expanded = true
+        // A new utterance clears the last one's failure: whatever went wrong, the user has
+        // moved on and the stale message would only be in the way.
+        insertFailure = null
         val started = engine.toggleDictation(sink = nodeSink, packageName = focusedPackage)
         if (!started && !engine.isDictating) {
             // Nothing silent: if the microphone could not be opened the panel says so
@@ -492,6 +544,22 @@ class ScribeAccessibilityService : AccessibilityService() {
     /**
      * Types into whatever field has focus, in whatever app owns it.
      *
+     * **This is the part that was broken, and it failed silently.** There was one way to
+     * find the field — `findFocus(FOCUS_INPUT)` — and one way to write to it, and when
+     * either came back empty-handed the exception was swallowed upstream, the panel
+     * collapsed on its way back to IDLE, and the user watched their sentence be assembled
+     * and then disappear. Three things changed:
+     *
+     *  - **Finding the field is a cascade, not a single call** — see [resolveTarget].
+     *    Between the app, its input method and Scribe's own overlay there are several
+     *    windows on screen, and which of them the framework treats as focused is exactly
+     *    the thing that varies by OEM.
+     *  - **It runs on the service's own thread.** Accessibility node calls are round trips
+     *    into another process; issuing them from the reveal's timer thread was doing the
+     *    one thing every sample in the platform documentation avoids.
+     *  - **A failure is now visible.** [insertFailure] holds the panel open with the words
+     *    still in it and a button to try again, instead of closing as if it had worked.
+     *
      * `ACTION_SET_TEXT` replaces a node's whole contents, so the existing text is read,
      * the transcript spliced in at the cursor, and the result written back — otherwise
      * dictating into a half-written message would delete the half already there. The
@@ -500,57 +568,7 @@ class ScribeAccessibilityService : AccessibilityService() {
     private val nodeSink = object : TextSink {
         override fun commit(text: String) {
             if (text.isEmpty()) return
-            val node = findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-                ?: error("no text field has focus")
-            try {
-                // An empty field often reports its *placeholder* as `text`. Splicing into
-                // that produced "what you saidType a message…" — the transcript landing in
-                // front of hint text that was never really there. `isShowingHintText` is
-                // the only reliable way to tell the two apart, and when it is set the field
-                // is empty however much text it claims to have.
-                val showingHint = node.isShowingHintText ||
-                    (node.hintText != null && node.hintText?.toString() == node.text?.toString())
-                val existing = if (showingHint) "" else node.text?.toString().orEmpty()
-                val start = node.textSelectionStart.coerceIn(0, existing.length)
-                val end = node.textSelectionEnd.coerceIn(0, existing.length)
-                    .coerceAtLeast(start)
-                val from = minOf(start, end)
-                val to = maxOf(start, end)
-
-                val next = buildString {
-                    append(existing, 0, from)
-                    // A space when joining onto existing words, so dictating twice in a
-                    // row does not run the sentences together.
-                    if (from > 0 && !existing[from - 1].isWhitespace() && !text[0].isWhitespace()) {
-                        append(' ')
-                    }
-                    append(text)
-                    append(existing, to, existing.length)
-                }
-
-                val args = Bundle().apply {
-                    putCharSequence(
-                        AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                        next,
-                    )
-                }
-                check(node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
-                    "the app refused the text"
-                }
-
-                // Put the cursor after what was just inserted rather than at the end of
-                // the field, so the user can carry on where they left off.
-                val caret = next.length - (existing.length - to)
-                node.performAction(
-                    AccessibilityNodeInfo.ACTION_SET_SELECTION,
-                    Bundle().apply {
-                        putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, caret)
-                        putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, caret)
-                    },
-                )
-            } finally {
-                node.recycle()
-            }
+            insertFromAnyThread(text)?.let { error(it) }
         }
 
         /**
@@ -561,6 +579,214 @@ class ScribeAccessibilityService : AccessibilityService() {
         override fun replace(previous: String, next: String): Boolean = false
     }
 
+    /** Posts to the service thread and waits, because [TextSink.commit] must report back. */
+    private fun insertFromAnyThread(text: String): String? {
+        if (Looper.myLooper() == Looper.getMainLooper()) return insert(text)
+        val problem = AtomicReference<String?>(null)
+        val finished = CountDownLatch(1)
+        main.post {
+            problem.set(insert(text))
+            finished.countDown()
+        }
+        if (!finished.await(INSERT_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+            return note("the app did not answer in time")
+        }
+        return problem.get()
+    }
+
+    /** Put [text] in the field. Returns null on success, or what went wrong. */
+    private fun insert(text: String): String? {
+        val node = resolveTarget() ?: return note("no text field has focus")
+        val problem = runCatching { typeInto(node, text) }
+            .getOrElse { it.message ?: it::class.java.simpleName }
+        return if (problem == null) {
+            insertFailure = null
+            Log.i(TAG, "inserted ${text.length} characters into ${node.packageName}")
+            null
+        } else {
+            note(problem)
+        }
+    }
+
+    /** Record a failure where both the user and `adb logcat -s ScribeA11y` can see it. */
+    private fun note(reason: String): String {
+        Log.w(TAG, "could not insert: $reason")
+        insertFailure = reason
+        return reason
+    }
+
+    /**
+     * Find something to type into.
+     *
+     * Ordered by how much the answer can be trusted, and each step is tried only because
+     * the one before it is known to come back empty on some device or in some app:
+     *
+     *  1. `findFocus` on the service, which resolves through whichever window the system
+     *     believes has input focus.
+     *  2. The same question asked of the active window's tree directly. The two disagree
+     *     when something else is between the app and the top of the window stack — which,
+     *     with a floating bubble on screen, is every time the bubble is used.
+     *  3. Every window Scribe is allowed to see, its own overlays excluded.
+     *  4. A walk of the active window looking for a field that says it is focused. Apps
+     *     that draw their own text handling — WebViews especially — often never report
+     *     input focus at all.
+     *  5. The only editable field on screen, if there is exactly one. With one candidate
+     *     there is nothing to get wrong; with two, guessing could type into the wrong one,
+     *     so it gives up instead.
+     */
+    private fun resolveTarget(): AccessibilityNodeInfo? {
+        editable(runCatching { findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }.getOrNull())
+            ?.let { return it }
+
+        val root = runCatching { rootInActiveWindow }.getOrNull()
+        editable(runCatching { root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }.getOrNull())
+            ?.let { return it }
+
+        runCatching { windows }.getOrNull().orEmpty().forEach { window ->
+            if (window.type == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY) return@forEach
+            val windowRoot = runCatching { window.root }.getOrNull() ?: return@forEach
+            editable(
+                runCatching { windowRoot.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }.getOrNull(),
+            )?.let { return it }
+        }
+
+        return root?.let { searchForField(it) }
+    }
+
+    /** A node worth typing into: editable, and not one of Scribe's own views. */
+    private fun editable(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        if (node == null) return null
+        if (!node.isEditable) return null
+        if (node.packageName?.toString() == packageName) return null
+        return node
+    }
+
+    /**
+     * Walk the tree for a field, preferring one that claims focus.
+     *
+     * Breadth-first and capped: this runs on the service thread while the user is waiting,
+     * and a pathological view hierarchy must not be able to stall it.
+     */
+    private fun searchForField(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.addLast(root)
+        val candidates = mutableListOf<AccessibilityNodeInfo>()
+        var scanned = 0
+        while (queue.isNotEmpty() && scanned < MAX_NODES_SCANNED) {
+            val node = queue.removeFirst()
+            scanned++
+            if (editable(node) != null && node.isVisibleToUser) {
+                if (node.isFocused) return node
+                candidates += node
+            }
+            for (i in 0 until node.childCount) {
+                runCatching { node.getChild(i) }.getOrNull()?.let { queue.addLast(it) }
+            }
+        }
+        // Two fields and no focus is a guess, and guessing types into the wrong one.
+        return candidates.singleOrNull()
+    }
+
+    /** Splice the transcript in at the cursor and write the field back. */
+    private fun typeInto(node: AccessibilityNodeInfo, text: String): String? {
+        // An empty field often reports its *placeholder* as `text`. Splicing into that
+        // produced "what you saidType a message…" — the transcript landing in front of
+        // hint text that was never really there. `isShowingHintText` is the only reliable
+        // way to tell the two apart, and when it is set the field is empty however much
+        // text it claims to have.
+        val showingHint = node.isShowingHintText ||
+            (node.hintText != null && node.hintText?.toString() == node.text?.toString())
+        val existing = if (showingHint) "" else node.text?.toString().orEmpty()
+        // Where the words go is decided in `core`, which has no Android in it and is
+        // therefore the one part of this path that is covered by tests on a machine with
+        // no phone attached. See TextSpliceTest.
+        val spliced = TextSplice.into(
+            existing = existing,
+            start = node.textSelectionStart,
+            end = node.textSelectionEnd,
+            insertion = text,
+        )
+        val next = spliced.text
+
+        // Ask for focus first when the node does not have it. The bubble is used while
+        // *another* keyboard owns the field, so by the time the reveal finishes the app
+        // may have moved focus on — and several toolkits refuse ACTION_SET_TEXT outright
+        // on a node they do not consider focused.
+        if (!node.isFocused) runCatching { node.performAction(AccessibilityNodeInfo.ACTION_FOCUS) }
+
+        val args = Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, next)
+        }
+        var typed = runCatching {
+            node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        }.getOrDefault(false)
+
+        if (!typed) {
+            // Second attempt with a caret placed first. A field that has never been
+            // touched can report itself editable and still refuse to be written to until
+            // it has a selection to write at.
+            runCatching {
+                node.performAction(
+                    AccessibilityNodeInfo.ACTION_SET_SELECTION,
+                    caretAt(existing.length),
+                )
+            }
+            typed = runCatching {
+                node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+            }.getOrDefault(false)
+        }
+
+        if (!typed) return "this app would not accept typed text"
+
+        // Put the cursor after what was just inserted rather than at the end of the field,
+        // so the user can carry on where they left off. Best effort: a field that will
+        // take text but not a selection is still a success.
+        runCatching {
+            node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, caretAt(spliced.caret))
+        }
+
+        // Read back, for the log only. Some fields reformat what they are given and some
+        // report stale text for a moment, so this is a diagnostic and never a verdict —
+        // treating a mismatch as failure would offer a retry that typed everything twice.
+        runCatching {
+            if (node.refresh() && node.text?.toString() == existing && next != existing) {
+                Log.w(TAG, "the field still reads as it did before the write")
+            }
+        }
+        return null
+    }
+
+    private fun caretAt(position: Int): Bundle = Bundle().apply {
+        putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, position)
+        putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, position)
+    }
+
+    /**
+     * Try the last transcript again, after the user has tapped back into a field.
+     *
+     * The words are still in `state.lastText`, so a failed insertion costs a tap rather
+     * than the whole utterance.
+     */
+    private fun retryInsert() {
+        val text = engine.state.value.lastText
+        if (text.isEmpty()) {
+            insertFailure = null
+            return
+        }
+        insertFailure = null
+        insert(text)
+    }
+
+    /** The service's own thread, which is where accessibility calls belong. */
+    private val main = Handler(Looper.getMainLooper())
+
+    /**
+     * Why the last insertion failed, or null. Holding this keeps the panel open with the
+     * transcript still in it — the alternative, which is what shipped, is a panel that
+     * closes exactly as it does on success and a field that never receives anything.
+     */
+    private var insertFailure by mutableStateOf<String?>(null)
+
     companion object {
         private const val TAG = "ScribeA11y"
 
@@ -569,6 +795,15 @@ class ScribeAccessibilityService : AccessibilityService() {
 
         /** How close to the bottom counts as being over the dismiss target. */
         private const val DISMISS_REACH_PX = 200
+
+        /** How long the reveal's thread will wait for the field to accept the text. */
+        private const val INSERT_TIMEOUT_MS = 2_500L
+
+        /** A cap on the tree walk, so a pathological view hierarchy cannot stall it. */
+        private const val MAX_NODES_SCANNED = 600
+
+        /** Focus is noted at most this often; the event stream is far busier than this. */
+        private const val FOCUS_NOTE_INTERVAL_MS = 250L
 
         private const val SUMMON_CHANNEL = "scribe-summon"
         private const val SUMMON_NOTIFICATION = 3
