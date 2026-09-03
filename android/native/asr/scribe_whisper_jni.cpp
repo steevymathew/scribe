@@ -33,6 +33,13 @@ namespace {
 
 constexpr const char* kTag = "scribewhisper";
 
+/**
+ * A silence long enough to be a paragraph break, in centiseconds — whisper's timestamp
+ * unit. Around three quarters of a second is a breath; past one and a half the speaker has
+ * finished a thought.
+ */
+constexpr int64_t kPauseCentiseconds = 150;
+
 struct WhisperHandle {
   whisper_context* ctx = nullptr;
   int n_threads = 4;
@@ -99,7 +106,10 @@ JNIEXPORT jstring JNICALL Java_dev_smantics_scribe_asr_NativeWhisper_transcribe(
   // Each press of the key is an independent utterance; carrying decoder context across
   // them lets one bad transcript poison the next.
   params.no_context = true;
-  params.no_timestamps = true;
+  // Timestamps are needed to find the pauses. They are not shown to anyone — they decide
+  // where a paragraph break goes, so a speaker who stops for a breath gets a new
+  // paragraph instead of two minutes arriving as one block.
+  params.no_timestamps = false;
   params.print_progress = false;
   params.print_realtime = false;
   params.print_special = false;
@@ -118,11 +128,22 @@ JNIEXPORT jstring JNICALL Java_dev_smantics_scribe_asr_NativeWhisper_transcribe(
     return scribe::make_jstring(env, "");
   }
 
+  // Segments are joined with a marker wherever the speaker paused for longer than
+  // kPauseCentiseconds. The marker is U+001F (unit separator) — a control character no
+  // transcript can contain, so the Kotlin side can find the pauses unambiguously and
+  // strip any it does not use.
   std::string text;
   const int n_segments = whisper_full_n_segments(h->ctx);
+  int64_t previous_end = -1;
   for (int s = 0; s < n_segments; ++s) {
     const char* seg = whisper_full_get_segment_text(h->ctx, s);
-    if (seg != nullptr) text += seg;
+    if (seg == nullptr) continue;
+    const int64_t t0 = whisper_full_get_segment_t0(h->ctx, s);
+    if (previous_end >= 0 && (t0 - previous_end) >= kPauseCentiseconds) {
+      text += "\x1F";
+    }
+    text += seg;
+    previous_end = whisper_full_get_segment_t1(h->ctx, s);
   }
   scribe::trim(text);
   return scribe::make_jstring(env, text);

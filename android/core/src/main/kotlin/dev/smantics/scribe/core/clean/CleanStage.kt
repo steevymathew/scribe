@@ -62,6 +62,18 @@ data class CleanOptions(
     val sentenceCase: Boolean = true,
     val applyDictionary: Boolean = true,
     val expandSnippets: Boolean = true,
+
+    /**
+     * Break the text into sentences and paragraphs rather than delivering a wall.
+     *
+     * This is most of what makes Clean look different from Raw. Without it the two modes
+     * differ by a few commas and a capital letter, which is not a difference anyone can
+     * see in a long dictation.
+     */
+    val paragraphs: Boolean = true,
+
+    /** Split run-on chains joined by "and then" into separate sentences. */
+    val splitSentences: Boolean = true,
 )
 
 /**

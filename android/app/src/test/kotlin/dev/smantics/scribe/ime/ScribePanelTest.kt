@@ -6,6 +6,10 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
@@ -69,12 +73,20 @@ class ScribePanelTest {
     private fun panel(
         state: EngineState = EngineState(status = DictationStatus.READY, statusDetail = "Ready"),
         actions: PanelActions = RecordingActions(),
+        keysShown: Boolean = false,
     ) {
         compose.setContent {
+            var keys by remember { mutableStateOf(keysShown) }
             ScribeTheme {
                 // A width is pinned so the layout is measured rather than collapsing to
                 // zero, which would make every "is displayed" assertion meaningless.
-                ScribePanel(state = state, actions = actions, modifier = Modifier.width(412.dp))
+                ScribePanel(
+                    state = state,
+                    actions = actions,
+                    keysShown = keys,
+                    onToggleKeys = { keys = !keys },
+                    modifier = Modifier.width(412.dp),
+                )
             }
         }
     }
@@ -108,7 +120,8 @@ class ScribePanelTest {
         showKeys()
         compose.onNodeWithTag("key-q").performClick()
         compose.onNodeWithTag("key-a").performClick()
-        assertEquals(listOf("type:q", "type:a"), actions.calls)
+        compose.onNodeWithTag("key-Space").performClick()
+        assertEquals(listOf("type:q", "type:a", "space"), actions.calls)
     }
 
     @Test fun `shift capitalises exactly one letter`() {
@@ -165,22 +178,15 @@ class ScribePanelTest {
     }
 
     /**
-     * The panel lost its status row in the redesign — the transcript took that space — so
-     * high accuracy now reads from the state of its own control rather than a badge.
+     * The high-accuracy control is gone from the panel.
+     *
+     * It made transcripts worse in use and there was no way to tell from the keyboard
+     * whether it had done anything at all. Which model runs is now a decision made once in
+     * Settings, not a button that silently changes the answer.
      */
-    @Test fun `high accuracy reports its state through the control`() {
-        panel(
-            EngineState(
-                status = DictationStatus.READY,
-                statusDetail = "Ready",
-                boostActive = true,
-                heavyModelAvailable = true,
-            ),
-        )
-        assertTrue(
-            compose.onAllNodesWithContentDescription("High accuracy on")
-                .fetchSemanticsNodes().isNotEmpty(),
-        )
+    @Test fun `there is no high accuracy button on the keyboard`() {
+        panel()
+        compose.onNodeWithTag("boost-button").assertDoesNotExist()
     }
 
     // ------------------------------------------------------ the permission path
@@ -235,10 +241,9 @@ class ScribePanelTest {
         val actions = RecordingActions()
         panel(actions = actions)
         compose.onNodeWithTag("util-Backspace").performClick()
-        compose.onNodeWithTag("util-Space").performClick()
         compose.onNodeWithTag("util-Enter").performClick()
         compose.onNodeWithTag("util-Switch to another keyboard").performClick()
-        assertEquals(listOf("backspace", "space", "enter", "switch"), actions.calls)
+        assertEquals(listOf("backspace", "enter", "switch"), actions.calls)
     }
 
     /** Dictation is a toggle now: one tap on, one tap off, no holding. */
@@ -272,51 +277,32 @@ class ScribePanelTest {
     }
 
     /**
-     * Nothing on the keyboard matters while a microphone is open, so it stays away — even
-     * if the letters were asked for. The space is worth more to the transcript.
+     * The letters stay exactly as the user left them. An earlier version hid them the
+     * moment dictation started, so the panel jumped on every press of the microphone and
+     * the choice never stuck.
      */
-    @Test fun `the letters stay hidden while dictating`() {
+    @Test fun `the letters stay up while dictating if they were up`() {
         panel(
             EngineState(
                 status = DictationStatus.RECORDING,
                 statusDetail = "Listening…",
                 stage = DictationStage.LISTENING,
             ),
+            keysShown = true,
         )
-        showKeys()
-        compose.onNodeWithTag("key-q").assertDoesNotExist()
+        compose.onNodeWithTag("key-q").assertIsDisplayed()
+        compose.onNodeWithTag("transcript-reveal").assertIsDisplayed()
     }
 
-    @Test fun `boost is reachable once the high-accuracy model is installed`() {
+    /** Enter belongs at the end of the bottom row, where every keyboard puts it. */
+    @Test fun `enter sits on the bottom row of the letters`() {
         val actions = RecordingActions()
-        panel(
-            EngineState(
-                status = DictationStatus.READY,
-                statusDetail = "Ready",
-                heavyModelAvailable = true,
-            ),
-            actions,
-        )
-        compose.onNodeWithTag("boost-button").performClick()
-        assertEquals(listOf("boost:true"), actions.calls)
+        panel(actions = actions, keysShown = true)
+        compose.onNodeWithTag("key-Enter").performClick()
+        assertEquals(listOf("enter"), actions.calls)
     }
 
-    /**
-     * On a fresh install the high-accuracy model is a 190 MB download that has not
-     * happened. Arming it would confirm a capability the app can see it does not have, and
-     * the user would find out only after speaking.
-     */
-    @Test fun `boost does nothing until its model is on the device`() {
-        val actions = RecordingActions()
-        panel(actions = actions)   // heavyModelAvailable defaults to false
-        compose.onNodeWithTag("boost-button").performClick()
-        assertTrue("boost must not arm without its model", actions.calls.isEmpty())
-        compose.onAllNodesWithContentDescription(
-            "High accuracy needs the Small model — get it in Scribe",
-        ).fetchSemanticsNodes().let {
-            assertTrue("the reason must be readable by a screen reader", it.isNotEmpty())
-        }
-    }
+
 
     // ------------------------------------------------------------ the reveal
 
@@ -403,14 +389,14 @@ class ScribePanelTest {
      * cannot operate has failed at its own premise.
      */
     @Test fun `controls are labelled for a screen reader`() {
-        panel()
+        panel(keysShown = true)
         listOf(
             "Start dictating",
             "Dictation mode",
             "Backspace",
             "Space",
             "Enter",
-            "Show the letters",
+            "Hide the letters",
             "Switch to another keyboard",
         ).forEach { label ->
             val nodes = compose.onAllNodesWithContentDescription(label).fetchSemanticsNodes()

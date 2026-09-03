@@ -48,6 +48,7 @@ class ScribeInputMethodService : InputMethodService() {
     private val host = ImeComposeHost()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val handedness = MutableStateFlow(Handedness.RIGHT)
+    private val keysShown = MutableStateFlow(false)
 
     private val sink = InputConnectionSink { currentInputConnection }
 
@@ -57,7 +58,10 @@ class ScribeInputMethodService : InputMethodService() {
         engine = ScribeEngine.get(this)
         engine.warmUp()
         scope.launch {
-            engine.settings.config.collect { handedness.value = it.handedness }
+            engine.settings.config.collect {
+                handedness.value = it.handedness
+                keysShown.value = it.keyboardShown
+            }
         }
     }
 
@@ -86,8 +90,22 @@ class ScribeInputMethodService : InputMethodService() {
                 setContent {
                     val state by engine.state.collectAsState()
                     val hand by handedness.collectAsState()
+                    val keys by keysShown.collectAsState()
+                    val wide = resources.configuration.screenWidthDp >= SPLIT_WIDTH_DP
                     ScribeTheme(handedness = hand) {
-                        ScribePanel(state = state, actions = panelActions)
+                        ScribePanel(
+                            state = state,
+                            actions = panelActions,
+                            keysShown = keys,
+                            onToggleKeys = {
+                                scope.launch {
+                                    engine.settings.update {
+                                        it.copy(keyboardShown = !it.keyboardShown)
+                                    }
+                                }
+                            },
+                            splitAvailable = wide,
+                        )
                     }
                 }
                 host.attachTo(this)
@@ -272,3 +290,6 @@ class ScribeInputMethodService : InputMethodService() {
 
 /** Enough context to find a word boundary without reading the whole field. */
 private const val WORD_LOOKBEHIND = 96
+
+/** Past this width a split layout is worth offering — roughly a small tablet. */
+private const val SPLIT_WIDTH_DP = 600

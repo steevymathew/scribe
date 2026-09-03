@@ -59,6 +59,20 @@ object StripAnnotations : CleanStage {
     }
 }
 
+/**
+ * Remove the pause markers the transcriber inserted.
+ *
+ * Clean mode turns them into paragraph breaks; Raw has no use for them and must certainly
+ * not type them. They are an invisible control character, so a missed one would be a
+ * genuinely baffling bug report.
+ */
+object StripPauseMarkers : CleanStage {
+    override val id = "pause_markers"
+
+    override fun apply(text: String, ctx: CleanContext): String =
+        text.replace(Regex("""\s*$PAUSE_MARKER\s*"""), " ")
+}
+
 // ------------------------------------------------------------------- spacing
 
 /**

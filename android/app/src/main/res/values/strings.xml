@@ -21,4 +21,9 @@
         it can place your words at the cursor without deleting what is already there.
         Nothing is stored or sent anywhere.</string>
     <string name="a11y_summary">Show a dictation button on text fields</string>
+
+    <string name="summon_channel">Scribe button</string>
+    <string name="summon_title">Scribe is ready</string>
+    <string name="summon_body">Tap to bring the dictation button back.</string>
+    <string name="summon_action">Show button</string>
 </resources>

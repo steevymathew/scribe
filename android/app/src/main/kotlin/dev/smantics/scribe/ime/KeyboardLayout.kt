@@ -68,18 +68,19 @@ object KeyboardLayout {
     )
 
     /**
-     * The bottom row of the letters, the same shape in every layer.
+     * The bottom row, in the arrangement every Android keyboard uses.
      *
-     * Space, enter, backspace, the microphone and the keyboard switcher are **not** here:
-     * they live in the utility bar below, which is present whether or not the letters are
-     * showing. Duplicating them would mean two of each on screen at once, and one of them
-     * disappearing whenever the keys were put away.
+     * `?123 | , | space | . | ⏎`. Enter belongs at the right-hand end of this row, where
+     * the thumb expects it — an earlier version moved it to a utility bar and left a full
+     * stop sitting where the enter key should be, which read as a mistake because it was
+     * one. Backspace stays at the end of the third row, also as standard.
      */
     val bottomRow: List<Key> = listOf(
         Key.Layer,
         Key.Char(",", ","),
         Key.Space,
         Key.Char(".", "."),
+        Key.Enter,
     )
 
     fun rowsFor(layer: KeyboardLayer, shift: ShiftState): List<List<Key>> = when {
@@ -103,5 +104,17 @@ object KeyboardLayout {
         is Key.Shift, is Key.Backspace, is Key.Enter, is Key.Layer -> 1.5f
         is Key.Mic -> 1.5f
         else -> 1f
+    }
+
+    /**
+     * Split the row for a wide screen.
+     *
+     * On the Fold's inner display a full-width keyboard puts the letters eight inches
+     * apart, which is unusable with two thumbs. Splitting keeps each half under a thumb;
+     * on a normal phone width it is left alone.
+     */
+    fun split(row: List<Key>): Pair<List<Key>, List<Key>> {
+        val pivot = (row.size + 1) / 2
+        return row.take(pivot) to row.drop(pivot)
     }
 }

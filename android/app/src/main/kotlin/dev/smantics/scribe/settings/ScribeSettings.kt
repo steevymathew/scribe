@@ -67,6 +67,14 @@ data class ScribeConfig(
     val historyEnabled: Boolean = false,
 
     // Layout
+    /**
+     * Whether the letters are showing.
+     *
+     * Remembered across every appearance of the keyboard: if they were up when it was last
+     * dismissed they come back up. Voice is the primary mode, so the first run starts with
+     * them away — after that it is the user's choice, not the app's.
+     */
+    val keyboardShown: Boolean = false,
     val handedness: Handedness = Handedness.RIGHT,
     val bubbleEnabled: Boolean = false,
 
@@ -154,6 +162,7 @@ class SettingsRepository(private val context: Context) {
             prefs[K_DICTIONARY] = next.dictionary.toJson()
             prefs[K_SNIPPETS] = next.snippets.toJson()
             prefs[K_HISTORY] = next.historyEnabled
+            prefs[K_KEYS_SHOWN] = next.keyboardShown
             prefs[K_HANDEDNESS] = next.handedness.name
             prefs[K_BUBBLE] = next.bubbleEnabled
             prefs[K_ONBOARDED] = next.onboardingComplete
@@ -185,6 +194,7 @@ class SettingsRepository(private val context: Context) {
             dictionary = this[K_DICTIONARY]?.fromJson() ?: defaults.dictionary,
             snippets = this[K_SNIPPETS]?.fromJson() ?: defaults.snippets,
             historyEnabled = this[K_HISTORY] ?: defaults.historyEnabled,
+            keyboardShown = this[K_KEYS_SHOWN] ?: defaults.keyboardShown,
             handedness = this[K_HANDEDNESS]?.let {
                 runCatching { Handedness.valueOf(it) }.getOrNull()
             } ?: defaults.handedness,
@@ -215,6 +225,7 @@ class SettingsRepository(private val context: Context) {
         val K_DICTIONARY = stringPreferencesKey("dictionary")
         val K_SNIPPETS = stringPreferencesKey("snippets")
         val K_HISTORY = booleanPreferencesKey("history_enabled")
+        val K_KEYS_SHOWN = booleanPreferencesKey("keyboard_shown")
         val K_HANDEDNESS = stringPreferencesKey("handedness")
         val K_BUBBLE = booleanPreferencesKey("bubble_enabled")
         val K_ONBOARDED = booleanPreferencesKey("onboarding_complete")

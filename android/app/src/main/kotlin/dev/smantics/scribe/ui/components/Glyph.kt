@@ -133,13 +133,13 @@ fun Glyph(
             }
 
             GlyphName.INSERT -> {
-                // Down arrow onto a baseline — "place what I said here". Deliberately not
-                // a paper plane: this inserts text into a field, it does not send a message,
-                // and a send icon over someone's half-written chat would be alarming.
-                drawLine(color, p(12f, 3f), p(12f, 14f), stroke.width, StrokeCap.Round)
-                drawLine(color, p(7f, 9f), p(12f, 14f), stroke.width, StrokeCap.Round)
-                drawLine(color, p(17f, 9f), p(12f, 14f), stroke.width, StrokeCap.Round)
+                // An arrow rising *out of* a baseline: the text is being pushed up into the
+                // field. It pointed down before, which read as a download — the one thing
+                // this button certainly is not.
                 drawLine(color, p(4f, 20f), p(20f, 20f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(12f, 16f), p(12f, 4f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(7f, 9f), p(12f, 4f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(17f, 9f), p(12f, 4f), stroke.width, StrokeCap.Round)
             }
 
             GlyphName.CLOSE -> {

@@ -17,7 +17,7 @@ enum class Mode { RAW, CLEAN }
  * speaker. Neither is something the user said, so both are removed. Nothing else is.
  */
 object RawPipeline {
-    private val stages: List<CleanStage> = listOf(StripAnnotations, NormalizeSpacing)
+    private val stages: List<CleanStage> = listOf(StripAnnotations, StripPauseMarkers, NormalizeSpacing)
 
     fun run(text: String, ctx: CleanContext = CleanContext()): String =
         stages.fold(text) { acc, stage -> stage.apply(acc, ctx) }
@@ -32,6 +32,8 @@ object RawPipeline {
  *  - spoken punctuation goes early, so later stages see real sentence boundaries;
  *  - disfluencies before fillers, so "I I um I think" collapses cleanly;
  *  - self-correction after both, so the corrector cue is adjacent to its replacement;
+ *  - structure — run-ons split, lists found, paragraphs opened — before casing, so every
+ *    sentence and list item that appears gets its capital letter;
  *  - sentence casing before the dictionary and snippets, so a user's deliberate lowercase
  *    ("iPhone", "eBay") is not "corrected" into a capital at the start of a sentence;
  *  - spacing last, because every stage above may leave a gap behind.
@@ -44,7 +46,14 @@ object CleanPipeline {
         RemoveFillers,
         SelfCorrection,
         FormatNumbers,
+        // Structure before casing, so every new sentence and list item gets its capital.
+        // Paragraphs runs before the list stages, not after: it turns the transcriber's
+        // pause markers into real line breaks, and the list rules look for an item at the
+        // start of a line. Behind a marker they saw no boundary and found no list.
+        SplitRunOns,
+        Paragraphs,
         DetectLists,
+        SpokenEnumeration,
         SentenceCase,
         ApplyDictionary,
         ExpandSnippets,

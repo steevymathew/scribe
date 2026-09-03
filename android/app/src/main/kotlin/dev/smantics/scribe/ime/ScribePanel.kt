@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -97,15 +98,14 @@ interface PanelActions {
 fun ScribePanel(
     state: EngineState,
     actions: PanelActions,
+    keysShown: Boolean,
+    onToggleKeys: () -> Unit,
     modifier: Modifier = Modifier,
+    splitAvailable: Boolean = false,
 ) {
     var layer by remember { mutableStateOf(KeyboardLayer.LETTERS) }
     var shift by remember { mutableStateOf(ShiftState.OFF) }
-
-    // Voice is the primary mode, so the letters start away. This is the whole point of a
-    // dictation keyboard: most of the time it should be a microphone and a transcript, not
-    // a wall of keys sitting under text nobody is typing.
-    var keysShown by remember { mutableStateOf(false) }
+    var split by remember { mutableStateOf(false) }
 
     // How much of the width the panel takes. A dictation panel does not need a full
     // keyboard's footprint, and on an 8-inch inner display a full-width one is absurd.
@@ -145,16 +145,19 @@ fun ScribePanel(
                 }
             }
 
-            // The letters go away while dictating. None of them do anything useful with a
-            // microphone open, and the space is worth more to the transcript.
+            // The letters stay exactly as the user left them. An earlier version hid them
+            // the moment dictation started, which meant the panel jumped every time the
+            // microphone was pressed and the choice never stuck — if they were up, they
+            // stay up and the transcript appears above them.
             AnimatedVisibility(
-                visible = keysShown && !dictating,
+                visible = keysShown,
                 enter = expandVertically() + fadeIn(),
                 exit = shrinkVertically() + fadeOut(),
             ) {
                 Keys(
                     layer = layer,
                     shift = shift,
+                    split = split && splitAvailable,
                     state = state,
                     actions = actions,
                     onLayer = {
@@ -184,8 +187,11 @@ fun ScribePanel(
                 keysShown = keysShown,
                 widthStep = widthStep,
                 dictating = dictating,
+                splitAvailable = splitAvailable,
+                split = split,
                 actions = actions,
-                onToggleKeys = { keysShown = !keysShown },
+                onToggleKeys = onToggleKeys,
+                onToggleSplit = { split = !split },
                 onCycleWidth = { widthStep = widthStep.next() },
             )
         }
@@ -213,8 +219,11 @@ private fun UtilityBar(
     keysShown: Boolean,
     widthStep: PanelWidth,
     dictating: Boolean,
+    splitAvailable: Boolean,
+    split: Boolean,
     actions: PanelActions,
     onToggleKeys: () -> Unit,
+    onToggleSplit: () -> Unit,
     onCycleWidth: () -> Unit,
 ) {
     val haptics = rememberKeyHaptics()
@@ -230,16 +239,17 @@ private fun UtilityBar(
             active = keysShown,
         ) { haptics(); onToggleKeys() }
 
-        UtilityKey(GlyphName.BACKSPACE, "Backspace", 1f, enabled = !dictating) {
-            haptics(); actions.backspace()
-        }
-        UtilityKey(GlyphName.SPACE, "Space", 2f, enabled = !dictating) {
-            haptics(); actions.space()
-        }
-        UtilityKey(GlyphName.RETURN, "Enter", 1.2f, enabled = !dictating) {
-            haptics(); actions.enter()
-        }
+        // Backspace and enter stay reachable with the letters away — those two are needed
+        // whether or not anyone is typing. Space and the full stop live on the letters,
+        // where every keyboard puts them.
+        UtilityKey(GlyphName.BACKSPACE, "Backspace", 1f) { haptics(); actions.backspace() }
+        UtilityKey(GlyphName.RETURN, "Enter", 1f) { haptics(); actions.enter() }
         UtilityKey(GlyphName.RESIZE, widthStep.label, 1f) { haptics(); onCycleWidth() }
+        if (splitAvailable) {
+            UtilityKey(GlyphName.GRIP, "Split the keyboard", 1f, active = split) {
+                haptics(); onToggleSplit()
+            }
+        }
 
         // Back to whichever keyboard was in use before Scribe. Labelled plainly, because
         // an unexplained keyboard icon in the corner is a button nobody dares press.
@@ -354,9 +364,6 @@ private fun VoiceStrip(state: EngineState, actions: PanelActions) {
             }
 
             MicToggle(state) { haptics(); actions.toggleDictation() }
-            BoostButton(state.boostActive, state.heavyModelAvailable) { held ->
-                haptics(); actions.setBoost(held)
-            }
         }
 
         // Status sits under the strip, not beside it: the strip is already several controls
@@ -437,42 +444,6 @@ private fun MicToggle(state: EngineState, onToggle: () -> Unit) {
 }
 
 @Composable
-private fun BoostButton(active: Boolean, available: Boolean, onChange: (Boolean) -> Unit) {
-    Box(
-        Modifier
-            .testTag("boost-button")
-            .size(38.dp)
-            .then(
-                if (active && available) {
-                    Modifier.neuActive(CircleShape, ScribeTokens.warn)
-                } else {
-                    Modifier.neuInset(CircleShape, depth = 0.7f)
-                },
-            )
-            .semantics {
-                contentDescription = when {
-                    !available -> "High accuracy needs the Small model — get it in Scribe"
-                    active -> "High accuracy on"
-                    else -> "Turn on high accuracy"
-                }
-            }
-            .clickable(enabled = available) { onChange(!active) },
-        contentAlignment = Alignment.Center,
-    ) {
-        Glyph(
-            GlyphName.BOLT,
-            when {
-                !available -> ScribeTokens.faint.copy(alpha = 0.4f)
-                active -> ScribeTokens.warn
-                else -> ScribeTokens.faint
-            },
-            size = 16.dp,
-            thickness = 1.6.dp,
-        )
-    }
-}
-
-@Composable
 private fun RoundControl(
     glyph: GlyphName,
     description: String,
@@ -499,6 +470,7 @@ private fun RoundControl(
 private fun Keys(
     layer: KeyboardLayer,
     shift: ShiftState,
+    split: Boolean,
     state: EngineState,
     actions: PanelActions,
     onLayer: () -> Unit,
@@ -511,11 +483,21 @@ private fun Keys(
                 Modifier.fillMaxWidth().height(46.dp),
                 horizontalArrangement = Arrangement.spacedBy(5.dp),
             ) {
-                row.forEach { key ->
-                    KeyButton(
-                        key, layer, shift, state, actions,
-                        onLayer, onShift, onTypedCharacter,
-                    )
+                if (split) {
+                    // A gap down the middle, so each half sits under a thumb. On an
+                    // eight-inch display a full-width row puts Q and P a hand apart.
+                    val (left, right) = KeyboardLayout.split(row)
+                    left.forEach { key ->
+                        KeyButton(key, layer, shift, state, actions, onLayer, onShift, onTypedCharacter)
+                    }
+                    Spacer(Modifier.weight(1.6f))
+                    right.forEach { key ->
+                        KeyButton(key, layer, shift, state, actions, onLayer, onShift, onTypedCharacter)
+                    }
+                } else {
+                    row.forEach { key ->
+                        KeyButton(key, layer, shift, state, actions, onLayer, onShift, onTypedCharacter)
+                    }
                 }
             }
         }

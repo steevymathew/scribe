@@ -1,6 +1,12 @@
 package dev.smantics.scribe.bubble
 
 import android.accessibilityservice.AccessibilityService
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Bundle
@@ -20,7 +26,10 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
+import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import dev.smantics.scribe.R
 import dev.smantics.scribe.core.dictation.TextSink
 import dev.smantics.scribe.dictation.DictationStage
 import dev.smantics.scribe.dictation.ScribeEngine
@@ -81,6 +90,15 @@ class ScribeAccessibilityService : AccessibilityService() {
         engine = ScribeEngine.get(this)
         engine.warmUp()
         instance = this
+        ContextCompat.registerReceiver(
+            this,
+            summonReceiver,
+            IntentFilter(ACTION_SUMMON),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        // Up straight away, rather than waiting to detect a text field that may never be
+        // reported. The user turned this on; showing it is the whole agreement.
+        showOverlay()
         Log.i(TAG, "connected")
     }
 
@@ -99,6 +117,10 @@ class ScribeAccessibilityService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
+        runCatching { unregisterReceiver(summonReceiver) }
+        runCatching {
+            getSystemService(NotificationManager::class.java)?.cancel(SUMMON_NOTIFICATION)
+        }
         hideOverlay()
         host.onDestroy()
         instance = null
@@ -117,6 +139,20 @@ class ScribeAccessibilityService : AccessibilityService() {
         // Never take the bubble away mid-utterance: focus flickers as apps redraw, and
         // losing the control you are speaking into is worse than it lingering a moment.
         if (engine.isDictating || expanded) return
+
+        // Kept up regardless of what has focus.
+        //
+        // Focus detection turned out to be the wrong thing to hang this on: apps report
+        // editable focus inconsistently, some never do, and a button that appears most of
+        // the time is worse than one that is simply always there. Android's own Bubbles
+        // API — the one behind Messenger's chat heads — is reserved for conversations
+        // (a MessagingStyle notification with a long-lived shortcut), so Scribe cannot use
+        // it and has to keep its own window alive. This is that: shown until dismissed.
+        if (alwaysOn) {
+            if (!dismissedByUser) showOverlay()
+            return
+        }
+
         if (dismissedUntilNextField) {
             val stillEditable = runCatching {
                 findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let { node ->
@@ -154,6 +190,12 @@ class ScribeAccessibilityService : AccessibilityService() {
 
     /** Set when the user closes the bubble; cleared once they touch a different field. */
     @Volatile private var dismissedUntilNextField = false
+
+    /** Persistent mode: the bubble stays up until it is explicitly dismissed. */
+    @Volatile private var alwaysOn = true
+
+    /** Only cleared by the notification action, so a dismissal really means dismissed. */
+    @Volatile private var dismissedByUser = false
 
     // ---------------------------------------------------------------- the overlay
 
@@ -245,7 +287,62 @@ class ScribeAccessibilityService : AccessibilityService() {
     /** Put the bubble away until the user taps a different text field. */
     private fun dismiss() {
         dismissedUntilNextField = true
+        dismissedByUser = true
         hideOverlay()
+        showSummonNotification()
+    }
+
+    /**
+     * The way back, once the bubble has been closed.
+     *
+     * A persistent, silent notification with one action. This is the "hard-coded button"
+     * the bubble needed: it does not depend on detecting anything, it is in the same place
+     * every time, and it works from any screen.
+     */
+    private fun showSummonNotification() {
+        val manager = getSystemService(NotificationManager::class.java) ?: return
+        if (manager.getNotificationChannel(SUMMON_CHANNEL) == null) {
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    SUMMON_CHANNEL,
+                    getString(R.string.summon_channel),
+                    NotificationManager.IMPORTANCE_LOW,
+                ).apply { setShowBadge(false) },
+            )
+        }
+        val summon = PendingIntent.getBroadcast(
+            this,
+            0,
+            Intent(ACTION_SUMMON).setPackage(packageName),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(this, SUMMON_CHANNEL)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(getString(R.string.summon_title))
+            .setContentText(getString(R.string.summon_body))
+            .setOngoing(true)
+            .setSilent(true)
+            .setContentIntent(summon)
+            .addAction(0, getString(R.string.summon_action), summon)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+        runCatching { manager.notify(SUMMON_NOTIFICATION, notification) }
+    }
+
+    /** Bring the bubble back and take the notification away. */
+    private fun summon() {
+        dismissedByUser = false
+        dismissedUntilNextField = false
+        showOverlay()
+        runCatching {
+            getSystemService(NotificationManager::class.java)?.cancel(SUMMON_NOTIFICATION)
+        }
+    }
+
+    private val summonReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == ACTION_SUMMON) summon()
+        }
     }
 
     private fun hideOverlay() {
@@ -305,9 +402,17 @@ class ScribeAccessibilityService : AccessibilityService() {
             val node = findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
                 ?: error("no text field has focus")
             try {
-                val existing = node.text?.toString().orEmpty()
+                // An empty field often reports its *placeholder* as `text`. Splicing into
+                // that produced "what you saidType a message…" — the transcript landing in
+                // front of hint text that was never really there. `isShowingHintText` is
+                // the only reliable way to tell the two apart, and when it is set the field
+                // is empty however much text it claims to have.
+                val showingHint = node.isShowingHintText ||
+                    (node.hintText != null && node.hintText?.toString() == node.text?.toString())
+                val existing = if (showingHint) "" else node.text?.toString().orEmpty()
                 val start = node.textSelectionStart.coerceIn(0, existing.length)
                 val end = node.textSelectionEnd.coerceIn(0, existing.length)
+                    .coerceAtLeast(start)
                 val from = minOf(start, end)
                 val to = maxOf(start, end)
 
@@ -360,6 +465,10 @@ class ScribeAccessibilityService : AccessibilityService() {
 
         /** Long enough to ride out an app redrawing its view tree. */
         private const val HIDE_DEBOUNCE_MS = 700L
+
+        private const val SUMMON_CHANNEL = "scribe-summon"
+        private const val SUMMON_NOTIFICATION = 3
+        const val ACTION_SUMMON = "dev.smantics.scribe.SUMMON_BUBBLE"
 
         @Volatile private var instance: ScribeAccessibilityService? = null
 

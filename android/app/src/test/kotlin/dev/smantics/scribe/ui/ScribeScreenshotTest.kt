@@ -72,7 +72,12 @@ class ScribeScreenshotTest {
     ): @Composable () -> Unit = {
         ScribeTheme(handedness = handedness) {
             Box(Modifier.fillMaxWidth().background(ScribeTokens.bg).padding(vertical = 8.dp)) {
-                ScribePanel(state = state, actions = NoActions)
+                ScribePanel(
+                    state = state,
+                    actions = NoActions,
+                    keysShown = true,
+                    onToggleKeys = {},
+                )
             }
         }
     }
