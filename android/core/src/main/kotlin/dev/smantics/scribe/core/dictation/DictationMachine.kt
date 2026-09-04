@@ -44,8 +44,26 @@ class DictationMachine(
         /** Shorter than this is a mis-tap, not an utterance. Desktop value, unchanged. */
         const val MIN_AUDIO_SEC = 0.3
 
-        /** Longer than this is truncated rather than refused. Desktop value, unchanged. */
-        const val MAX_AUDIO_SEC = 120.0
+        /**
+         * The longest single utterance. Reaching it **stops** the recording and
+         * transcribes what was said; nothing captured is ever discarded.
+         *
+         * It used to be 120 s and it used to truncate — `audio.copyOf(120 s)` after the
+         * user had finished, so a long dictation produced a live transcript of everything
+         * and typed in the first two minutes of it. Raised to three, because the desktop's
+         * value was chosen for a keyboard shortcut you hold down rather than a toggle you
+         * press and forget.
+         *
+         * A cap is still needed, and the reason is worth stating: Whisper is not a
+         * streaming decoder, so the decode does not begin until you stop, and it costs a
+         * fraction of the length of what you said. An uncapped utterance is an uncapped
+         * wait. The way to remove the cap is to decode in segments as they finish, not to
+         * raise this number — see the Sessions plan.
+         */
+        const val MAX_AUDIO_SEC = 180.0
+
+        /** How long before the cap the user should be warned. */
+        const val LIMIT_WARNING_SEC = 20.0
 
         /** How many finished clips may queue behind a slow decode before we drop. */
         private const val QUEUE_DEPTH = 4
@@ -119,6 +137,21 @@ class DictationMachine(
         if (recording.get()) emit(DictationEvent.Level(rms))
     }
 
+    /**
+     * Tell the machine how long the recording is, so it can stop at the limit.
+     *
+     * Called from whatever is watching the capture — the level callback fires about fifty
+     * times a second, which is a fine clock for this. The machine deliberately does not
+     * ask the recorder for a duration: [AudioRecorder] stays a three-method interface that
+     * anything can implement, including the fakes the whole state machine is tested with.
+     */
+    fun noteDuration(seconds: Double) {
+        if (!recording.get()) return
+        if (seconds < MAX_AUDIO_SEC) return
+        emit(DictationEvent.LimitReached(seconds))
+        stopRecording()
+    }
+
     fun stopRecording() {
         if (!recording.compareAndSet(true, false)) return
         val heavy = useHeavy.get() || boostHeld.get()
@@ -131,13 +164,11 @@ class DictationMachine(
             status = Status.READY
             return
         }
-        val clipped = if (seconds > MAX_AUDIO_SEC) {
-            audio.copyOf((MAX_AUDIO_SEC * SAMPLE_RATE).toInt())
-        } else {
-            audio
-        }
-
-        val job = Job(clipped, heavy, clock())
+        // Everything captured is transcribed. The recording is stopped *at* the limit by
+        // [noteDuration] rather than trimmed after the fact, so by the time anything gets
+        // here there is nothing to throw away — and if some path ever does overshoot, the
+        // extra seconds are decoded rather than dropped on the floor.
+        val job = Job(audio, heavy, clock())
         if (!queue.offer(job)) {
             status = Status.READY
             emit(DictationEvent.Error("Still catching up on the last one — that clip was dropped"))

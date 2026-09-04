@@ -140,6 +140,8 @@ fun ScribePanel(
                         partialText = state.partialText,
                         diff = state.diff,
                         finalText = state.finalText,
+                        recordedSeconds = state.recordedSeconds,
+                        decodingSeconds = state.decodingSeconds,
                         modifier = Modifier.padding(horizontal = 2.dp),
                     )
                 }

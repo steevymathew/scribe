@@ -44,6 +44,8 @@ class DictationMachineTest {
     ) : Transcriber {
         var calls = 0
         var lastPrompt: String? = null
+        /** So a test can prove the whole clip was handed over, not a prefix of it. */
+        var lastSampleCount = -1
         override fun transcribe(
             pcm16k: FloatArray,
             language: String,
@@ -51,6 +53,7 @@ class DictationMachineTest {
             initialPrompt: String?,
         ): String {
             calls++
+            lastSampleCount = pcm16k.size
             lastPrompt = initialPrompt
             boom?.let { throw it }
             return result
@@ -201,14 +204,49 @@ class DictationMachineTest {
         assertEquals(DictationMachine.Status.READY, m.status)
     }
 
-    @Test fun `an over-long clip is truncated rather than refused`() {
+    /**
+     * The clip is transcribed **whole**. It used to be cut to MAX_AUDIO_SEC with
+     * `copyOf` after the user had already finished speaking, so a long dictation showed a
+     * live transcript of everything and typed in the first two minutes of it, with nothing
+     * anywhere to say why. Nothing captured is discarded now; the recording is stopped at
+     * the limit instead, before the words exist.
+     */
+    @Test fun `an over-long clip is transcribed whole rather than trimmed`() {
         val provider = FakeProvider()
-        val recorder = FakeRecorder(samples = seconds(DictationMachine.MAX_AUDIO_SEC + 30))
+        val overrun = seconds(DictationMachine.MAX_AUDIO_SEC + 30)
+        val recorder = FakeRecorder(samples = overrun)
         val (m, _) = machine(recorder = recorder, provider = provider)
         m.warmUp()
         m.startRecording()
         m.stopRecording()
         assertEquals(1, provider.light.calls)
+        assertEquals(overrun.size, provider.light.lastSampleCount)
+    }
+
+    @Test fun `reaching the limit stops the recording and says so`() {
+        val (m, events) = machine()
+        m.warmUp()
+        m.startRecording()
+        events.clear()
+
+        m.noteDuration(DictationMachine.MAX_AUDIO_SEC - 1)
+        assertTrue("stopped early", events.none { it is DictationEvent.LimitReached })
+
+        m.noteDuration(DictationMachine.MAX_AUDIO_SEC)
+        assertTrue(
+            "the user is never told the recording ended",
+            events.any { it is DictationEvent.LimitReached },
+        )
+        // Stopped for them: the clip is on its way to the decoder, not still growing.
+        assertTrue(events.any { it is DictationEvent.Transcribing })
+    }
+
+    @Test fun `the limit does nothing when nothing is being recorded`() {
+        val (m, events) = machine()
+        m.warmUp()
+        events.clear()
+        m.noteDuration(DictationMachine.MAX_AUDIO_SEC * 10)
+        assertTrue(events.isEmpty())
     }
 
     // ------------------------------------------------------------ error paths

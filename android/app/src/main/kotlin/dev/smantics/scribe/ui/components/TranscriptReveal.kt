@@ -56,6 +56,10 @@ fun TranscriptReveal(
     diff: List<TextDiff.Segment>,
     finalText: String,
     modifier: Modifier = Modifier,
+    /** Seconds captured so far, for the clock beside LISTENING. */
+    recordedSeconds: Float = 0f,
+    /** Seconds of audio being decoded, for the one beside TRANSCRIBING. */
+    decodingSeconds: Float = 0f,
 ) {
     if (stage == DictationStage.IDLE) return
 
@@ -89,7 +93,7 @@ fun TranscriptReveal(
                 modifier = Modifier.testTag("transcript-text"),
             )
         }
-        StageLabel(stage)
+        StageLabel(stage, recordedSeconds, decodingSeconds)
     }
 }
 
@@ -147,12 +151,30 @@ private fun textFor(
     DictationStage.FINAL -> AnnotatedString(finalText)
 }
 
-/** The small caption in the corner, naming what is happening right now. */
+/**
+ * The small caption in the corner, naming what is happening right now — and, for the two
+ * stages that can take a while, how long.
+ *
+ * **LISTENING carries a clock** because there is a limit on how long one utterance can be,
+ * and a limit nobody can see is indistinguishable from a bug: the panel showed a live
+ * transcript of everything said and then typed in only the first part of it. The clock
+ * turns amber inside the last twenty seconds.
+ *
+ * **TRANSCRIBING says how much audio it is working through** because the length of what
+ * you said is the one number that predicts the wait. Whisper is not a streaming decoder:
+ * the live transcript is a separate decode that gets thrown away, and pressing insert
+ * starts a fresh one over the whole clip. Two minutes of speech is a real wait, and being
+ * told what is being worked on is the difference between waiting and wondering.
+ */
 @Composable
-private fun StageLabel(stage: DictationStage) {
+private fun StageLabel(stage: DictationStage, recordedSeconds: Float, decodingSeconds: Float) {
+    val nearLimit = recordedSeconds >= LIMIT_WARNING_AT_SEC
     val (label, colour) = when (stage) {
-        DictationStage.LISTENING -> "LISTENING" to ScribeTokens.rec
-        DictationStage.TRANSCRIBING -> "TRANSCRIBING" to ScribeTokens.warn
+        DictationStage.LISTENING ->
+            "LISTENING · ${clock(recordedSeconds)}" to
+                if (nearLimit) ScribeTokens.warn else ScribeTokens.rec
+        DictationStage.TRANSCRIBING ->
+            "TRANSCRIBING ${clock(decodingSeconds)}" to ScribeTokens.warn
         DictationStage.CLEANING -> "CLEANING IT UP" to ScribeTokens.muted
         DictationStage.PUNCTUATING -> "ADDING PUNCTUATION" to ScribeTokens.warn
         DictationStage.FINAL -> "READY TO INSERT" to ScribeTokens.good
@@ -194,3 +216,17 @@ private fun StageLabel(stage: DictationStage) {
         )
     }
 }
+
+/** m:ss, because "97 s" is a number and "1:37" is a length. */
+private fun clock(seconds: Float): String {
+    val whole = seconds.toInt().coerceAtLeast(0)
+    return "%d:%02d".format(whole / 60, whole % 60)
+}
+
+/**
+ * Where the clock starts warning, twenty seconds before [DictationMachine.MAX_AUDIO_SEC].
+ *
+ * Held here rather than read from the machine so this component stays drawable from a
+ * preview and a test with nothing but two numbers.
+ */
+private const val LIMIT_WARNING_AT_SEC = 160f

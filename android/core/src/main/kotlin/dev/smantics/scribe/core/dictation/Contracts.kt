@@ -110,6 +110,18 @@ sealed interface DictationEvent {
     data object Transcribing : DictationEvent
 
     /**
+     * The recording hit [DictationMachine.MAX_AUDIO_SEC] and was stopped for the user.
+     *
+     * The cap is real and always was; what is new is saying so. It used to be applied by
+     * silently throwing away everything past it *after* the user had finished speaking —
+     * the panel showed a live transcript of the whole thing, and then the text that landed
+     * in the field stopped part-way through with nothing to explain it. Stopping at the
+     * limit and announcing it is not a nicer failure, it is the difference between a limit
+     * and a bug.
+     */
+    data class LimitReached(val seconds: Double) : DictationEvent
+
+    /**
      * [text] is what was inserted, in the current mode; [raw] is what was said. Both are
      * carried so history can show either and the mode toggle can re-render later.
      */

@@ -8,6 +8,34 @@ A dated record of what changed and when. Newest first. Times are local
 The Android port has its own docs (`android/README.md`, `android/docs/`); this section
 records what shipped and when, so the history is legible from the root of the project.
 
+### 2026-09-04 — v0.9.0: the audio that went missing, and the wait that was never explained
+
+- **Long dictations lost their ending, and it was three faults at once.** The clip was cut
+  to 120 s with `copyOf` *after* the user had finished — so the panel showed a live
+  transcript of everything and typed in the first two minutes, with nothing anywhere to say
+  why. Past 130 s `ensureCapacity` clamped and `append` then wrote off the end of the
+  array, killing the capture thread inside a `catch (Throwable)` that only logged. And the
+  buffer grew by doubling — copying several megabytes **on the capture thread**, which has
+  20 ms to get back to `AudioRecord.read` before the driver overruns, so past about a
+  minute that copy was long enough to drop audio out of the *middle* of an utterance.
+- **The recorder holds one-second blocks now.** Nothing is copied or reallocated on the
+  capture thread, storage is 16-bit rather than float (half the memory for samples that
+  arrive as 16-bit anyway), there is no ceiling, and the conversion to float happens on
+  whichever thread asked for the audio. Nothing captured is ever discarded: the limit is
+  now enforced by **stopping** the recording at 180 s and saying so, before the words
+  exist, rather than by trimming them afterwards.
+- **The limit is visible.** `LISTENING · 1:37` counts up while you talk and turns amber
+  inside the last twenty seconds. A limit nobody can see is indistinguishable from a bug.
+- **The wait after pressing insert is explained.** `TRANSCRIBING 1:02` names the length of
+  audio being decoded, which is the one number that predicts the wait — Whisper is not a
+  streaming recogniser, the live transcript is a separate decode that is thrown away, and
+  insert starts a fresh one over the whole clip.
+- **The reveal is skipped after a slow decode.** Past 2.5 s of decoding the cleanup
+  animation is a second added to a wait the user has already endured, so the text goes
+  straight in.
+- 220 tests, all green. `android/docs/OWNER-VERIFY.md` v0.9.0 — §3 asks for two timings
+  that nothing on the build host can establish.
+
 ### 2026-09-03 — v0.8.0: the bubble as one object, and a model setting that means something
 
 From the first real device pass. Most of these are things that were wrong, not missing.

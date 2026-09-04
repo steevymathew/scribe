@@ -131,6 +131,8 @@ fun VoicePanel(
                 partialText = state.partialText,
                 diff = state.diff,
                 finalText = state.finalText,
+                recordedSeconds = state.recordedSeconds,
+                decodingSeconds = state.decodingSeconds,
             )
         } else {
             // The answer to "is this working", never hidden behind the menu.

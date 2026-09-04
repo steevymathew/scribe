@@ -322,7 +322,36 @@ class ScribePanelTest {
         )
         compose.onNodeWithTag("transcript-reveal").assertIsDisplayed()
         compose.onNodeWithText("hey um Sydney just wanted to check").assertIsDisplayed()
-        compose.onNodeWithText("LISTENING").assertIsDisplayed()
+        compose.onNodeWithText("LISTENING", substring = true).assertIsDisplayed()
+    }
+
+    /**
+     * There is a limit on how long one utterance can be, and it used to be invisible: the
+     * panel showed a live transcript of everything and then typed in only the first part.
+     */
+    @Test fun `listening shows how long you have been talking`() {
+        panel(
+            EngineState(
+                status = DictationStatus.RECORDING,
+                stage = DictationStage.LISTENING,
+                partialText = "still going",
+                recordedSeconds = 97f,
+            ),
+        )
+        compose.onNodeWithText("LISTENING · 1:37").assertIsDisplayed()
+    }
+
+    /** The length of what you said is the number that predicts the wait. */
+    @Test fun `transcribing says how much audio it is working through`() {
+        panel(
+            EngineState(
+                status = DictationStatus.TRANSCRIBING,
+                stage = DictationStage.TRANSCRIBING,
+                partialText = "hey Sydney",
+                decodingSeconds = 62f,
+            ),
+        )
+        compose.onNodeWithText("TRANSCRIBING 1:02").assertIsDisplayed()
     }
 
     /** Stopping must be visibly different from listening, immediately. */
@@ -335,8 +364,8 @@ class ScribePanelTest {
                 partialText = "hey Sydney",
             ),
         )
-        compose.onNodeWithText("TRANSCRIBING").assertIsDisplayed()
-        compose.onNodeWithText("LISTENING").assertDoesNotExist()
+        compose.onNodeWithText("TRANSCRIBING", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("LISTENING", substring = true).assertDoesNotExist()
     }
 
     @Test fun `the cleanup names each stage as it happens`() {

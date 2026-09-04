@@ -314,3 +314,62 @@ set a value, showed a tag, and changed nothing observable.
 - [ ] Insertion still works (v0.7.0 §1), and still says so when it does not.
 - [ ] The keyboard still opens and closes smoothly (v0.7.0 §2).
 - [ ] The bubble's close badge still hides it, and the notification still brings it back.
+
+---
+
+# v0.9.0 — the audio that went missing, and the wait that was never explained
+
+## 1 · Long dictations no longer lose the end
+
+There **was** a hard limit and it was invisible. Three separate faults:
+
+- the clip was cut to 120 s with `copyOf` *after* you finished speaking, so the panel
+  showed a live transcript of everything and typed in the first two minutes;
+- past 130 s the capture thread wrote off the end of its buffer, died inside a
+  `catch (Throwable)` that only logged, and every sample after that was lost;
+- the buffer doubled by copying itself — several megabytes — **on the capture thread**,
+  which has 20 ms to get back to `AudioRecord.read` before the driver drops audio. Past
+  about a minute that copy is long enough to lose words in the *middle* of an utterance,
+  silently.
+
+All three are gone: audio is held as one-second blocks, nothing is ever copied or
+reallocated on the capture thread, there is no ceiling, and nothing captured is discarded.
+
+- [ ] Dictate for **three minutes** without stopping. Does every part of it arrive? The
+      end especially.
+- [ ] Dictate for about **90 seconds** and read the result carefully for gaps in the
+      middle — that was the silent-dropout window.
+- [ ] Keep going past three minutes. At 3:00 it should **stop by itself** and say
+      "That's the 180 second limit — transcribing what you said", then transcribe
+      everything up to that point. It must not simply stop responding.
+
+## 2 · You can now see how long you have been talking
+
+- [ ] While dictating the panel says `LISTENING · 1:37`, counting up.
+- [ ] Inside the last 20 seconds it turns amber.
+- [ ] This works on the keyboard and the bubble alike.
+
+## 3 · The wait after pressing insert is explained, and shorter when it was long
+
+What it is doing: **Whisper is not a streaming recogniser.** The live transcript you see
+while talking is a separate decode of the audio so far, run every 1.8 s and then thrown
+away. Pressing insert starts a *fresh* decode of the whole clip from the beginning, and
+that decode costs a fraction of the length of what you said. A two-minute dictation is a
+real wait, and none of it was previously visible.
+
+- [ ] While it decodes, the panel says `TRANSCRIBING 1:02` — the length of the audio it is
+      working through.
+- [ ] **Time it.** From pressing insert to the text landing, for a 10-second dictation and
+      again for a 60-second one. Those two numbers are the most useful thing you can send
+      back: they give the phone's real-time factor, which nothing on the build machine can
+      establish and which decides whether segmented decode is worth building next.
+- [ ] After a *slow* decode the cleanup animation is skipped and the text goes straight in
+      — no "cleaning it up" theatre on top of a wait you already sat through. After a fast
+      one the reveal still plays.
+- [ ] Anything above about 2.5 s of decoding should skip it. Does that feel like the right
+      threshold, or should it be lower?
+
+## 4 · Nothing else moved
+
+- [ ] The bubble still types into the field, the circle still opens and closes the panel,
+      cancel is still red, and the model setting still takes effect (v0.8.0).

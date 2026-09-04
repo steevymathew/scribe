@@ -53,6 +53,20 @@ data class EngineState(
     /** Whether the high-accuracy model is on disk. False on a fresh install. */
     val heavyModelAvailable: Boolean = false,
 
+    /** How long the current recording is, in seconds. Zero when not recording. */
+    val recordedSeconds: Float = 0f,
+
+    /**
+     * How long the utterance being decoded was, so the wait can be explained.
+     *
+     * "Transcribing…" on its own is the same message whether it will take half a second
+     * or twenty, and the length of what you just said is the one number that predicts
+     * which. Whisper decodes the whole clip from the beginning when you stop — it is not a
+     * streaming recogniser and the live transcript is a separate, discarded decode — so
+     * the wait is proportional to this.
+     */
+    val decodingSeconds: Float = 0f,
+
     /** Which part of the dictate-and-reveal sequence is on screen. */
     val stage: DictationStage = DictationStage.IDLE,
 
@@ -148,7 +162,14 @@ class ScribeEngine private constructor(private val appContext: Context) {
         },
     )
 
-    private val recorder = MicRecorder(onLevel = { machine.onLevel(it) })
+    // The explicit type is required, not cosmetic — the same circularity as `machine`
+    // below: the level callback reads the recorder's own duration.
+    private val recorder: MicRecorder = MicRecorder(onLevel = { rms ->
+        machine.onLevel(rms)
+        // The same fifty-a-second callback doubles as the clock that stops a recording at
+        // the limit. Cheap, and it cannot drift from the audio because it *is* the audio.
+        machine.noteDuration(recorder.seconds.toDouble())
+    })
 
     /**
      * Routes text to whichever surface has focus.
@@ -551,6 +572,12 @@ class ScribeEngine private constructor(private val appContext: Context) {
         val segments = TextDiff.diff(raw, cleaned)
         val changed = segments.any { it.kind != TextDiff.Kind.UNCHANGED }
 
+        // A reveal is worth about a second of someone's attention when the transcript
+        // arrived promptly. After a long decode it is a second added to a wait they have
+        // already been made to sit through, watching a panel that had nothing to say. So
+        // past a threshold the animation is skipped and the text goes straight in.
+        val hurried = lastDecodeSeconds > REVEAL_BUDGET_SEC
+
         fun publish(stage: DictationStage) {
             _state.value = _state.value.copy(
                 stage = stage,
@@ -599,9 +626,13 @@ class ScribeEngine private constructor(private val appContext: Context) {
 
         // Nothing was changed, so there is nothing to show. Skipping the animation here
         // matters: a reveal that reveals nothing is just a delay.
-        if (!changed) {
+        if (!changed || hurried) {
             publish(DictationStage.FINAL)
-            timers.schedule({ commit() }, FINAL_HOLD_MS, TimeUnit.MILLISECONDS)
+            timers.schedule(
+                { commit() },
+                if (hurried) HURRIED_HOLD_MS else FINAL_HOLD_MS,
+                TimeUnit.MILLISECONDS,
+            )
             return
         }
 
@@ -760,8 +791,15 @@ class ScribeEngine private constructor(private val appContext: Context) {
             )
             is DictationEvent.RecordingStopped -> {
                 lastAudioSeconds = event.durationSec
-                current
+                current.copy(
+                    recordedSeconds = 0f,
+                    decodingSeconds = event.durationSec.toFloat(),
+                )
             }
+            is DictationEvent.LimitReached -> current.copy(
+                statusDetail = "That's the ${event.seconds.toInt()} second limit — " +
+                    "transcribing what you said",
+            )
             DictationEvent.Transcribing -> current.copy(
                 status = DictationStatus.TRANSCRIBING,
                 statusDetail = "Transcribing…",
@@ -770,6 +808,7 @@ class ScribeEngine private constructor(private val appContext: Context) {
             is DictationEvent.Injected -> {
                 recordHistory(event)
                 recordSpeed(event)
+                lastDecodeSeconds = event.elapsedSec
                 // The reveal publishes states of its own and runs *after* this assignment
                 // — see the note on onEvent.
                 current.copy(
@@ -782,7 +821,7 @@ class ScribeEngine private constructor(private val appContext: Context) {
             is DictationEvent.Boost -> current.copy(boostActive = event.active)
             is DictationEvent.Level -> {
                 onHandsFreeLevel(event.rms)
-                current.copy(level = event.rms)
+                current.copy(level = event.rms, recordedSeconds = recorder.seconds)
             }
             is DictationEvent.Error -> current.copy(
                 status = DictationStatus.ERROR,
@@ -822,6 +861,9 @@ class ScribeEngine private constructor(private val appContext: Context) {
 
     /** Length of the clip most recently handed to the decoder, for the speed measure. */
     @Volatile private var lastAudioSeconds: Double = 0.0
+
+    /** How long that decode actually took, which decides whether the reveal is worth it. */
+    @Volatile private var lastDecodeSeconds: Double = 0.0
 
     private fun deliverToggle(event: DictationEvent.Injected): Boolean {
         if (toggleSink == null && !toggleActive.get()) return false
@@ -876,6 +918,19 @@ class ScribeEngine private constructor(private val appContext: Context) {
         private const val CLEANING_MS = 620L
         private const val PUNCTUATING_MS = 420L
         private const val FINAL_HOLD_MS = 260L
+
+        /**
+         * Past this much decoding, the reveal is skipped.
+         *
+         * Chosen as roughly the point where the wait stops feeling instant and starts
+         * being something the user is enduring. Whatever the cleanup did is still visible
+         * afterwards — the text is in the field and the toggle re-renders it — so nothing
+         * is lost by not animating it.
+         */
+        private const val REVEAL_BUDGET_SEC = 2.5
+
+        /** Long enough to register that something arrived; short enough not to be a wait. */
+        private const val HURRIED_HOLD_MS = 90L
 
         @Volatile private var instance: ScribeEngine? = null
 
