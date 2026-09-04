@@ -286,7 +286,9 @@ private fun KeyboardStep(enabled: Boolean, onOpen: () -> Unit) {
         )
         RouteExplainer(
             "A floating button",
-            "Sits on screen, works in any app. Needs accessibility access.",
+            "Sits on screen, works in any app. Needs accessibility access, and on a " +
+                "sideloaded build Android blocks that until you allow restricted " +
+                "settings — the Home screen has the five taps.",
         )
         if (enabled) {
             Row(

@@ -4,12 +4,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import dev.smantics.scribe.dictation.DictationStage
 import dev.smantics.scribe.dictation.EngineState
+import dev.smantics.scribe.ui.components.BubbleAssembly
 import dev.smantics.scribe.ui.components.VoicePanel
 import dev.smantics.scribe.ui.theme.DictationStatus
 import dev.smantics.scribe.ui.theme.ScribeTheme
@@ -52,16 +54,17 @@ class VoicePanelTest {
         ),
         onRetry: () -> Unit = {},
         onDismiss: () -> Unit = {},
+        onCancel: () -> Unit = {},
+        onToggleDictation: () -> Unit = {},
     ) {
         compose.setContent {
             ScribeTheme {
                 VoicePanel(
                     state = state,
-                    modelLabel = "base.en",
+                    modelLabel = "Base (English)",
                     onToggleMode = {},
-                    onStop = {},
-                    onCancel = {},
-                    onCollapse = {},
+                    onToggleDictation = onToggleDictation,
+                    onCancel = onCancel,
                     onOpenApp = {},
                     // Pinned so the layout is measured rather than collapsing to zero,
                     // which would make every "is displayed" assertion meaningless.
@@ -104,4 +107,133 @@ class VoicePanelTest {
         compose.onNodeWithTag("voice-dismiss-failure").performClick()
         assertEquals(1, dismissals.size)
     }
+
+    // ------------------------------------------------------------- the controls
+
+    /**
+     * The panel has to be able to *start* a dictation, not only finish one. The circle
+     * opens and closes the panel now, so it is no longer the thing that begins recording.
+     */
+    @Test fun `the microphone starts a dictation from the panel`() {
+        val toggles = mutableListOf<Unit>()
+        panel(onToggleDictation = { toggles += Unit })
+        compose.onNodeWithTag("voice-insert").performClick()
+        assertEquals(1, toggles.size)
+    }
+
+    @Test fun `the same control finishes it`() {
+        val toggles = mutableListOf<Unit>()
+        panel(
+            state = listening(),
+            onToggleDictation = { toggles += Unit },
+        )
+        compose.onNodeWithContentDescription("Insert what I said").performClick()
+        assertEquals(1, toggles.size)
+    }
+
+    /** Nothing to cancel when nothing is running; a cancel that is always there is noise. */
+    @Test fun `there is no cancel until there is something to cancel`() {
+        panel()
+        compose.onNodeWithTag("voice-cancel").assertDoesNotExist()
+    }
+
+    @Test fun `cancel appears while dictating and is reachable`() {
+        val cancels = mutableListOf<Unit>()
+        panel(state = listening(), onCancel = { cancels += Unit })
+        compose.onNodeWithTag("voice-cancel").assertIsDisplayed()
+        compose.onNodeWithTag("voice-cancel").performClick()
+        assertEquals(1, cancels.size)
+    }
+
+    /** It used to be a line in the hamburger menu. A destructive action is not a menu item. */
+    @Test fun `discard is not buried in the menu any more`() {
+        panel(state = listening())
+        compose.onNodeWithTag("voice-discard").assertDoesNotExist()
+    }
+
+    @Test fun `the panel no longer carries its own collapse control`() {
+        panel()
+        compose.onNodeWithTag("voice-collapse").assertDoesNotExist()
+    }
+
+    // -------------------------------------------------------- the assembly
+
+    private fun assembly(
+        expanded: Boolean,
+        state: EngineState = idle(),
+        onToggleExpanded: () -> Unit = {},
+        onClose: () -> Unit = {},
+    ) {
+        compose.setContent {
+            ScribeTheme {
+                BubbleAssembly(
+                    state = state,
+                    expanded = expanded,
+                    modelLabel = "Base (English)",
+                    onToggleExpanded = onToggleExpanded,
+                    onClose = onClose,
+                    onToggleDictation = {},
+                    onToggleMode = {},
+                    onCancel = {},
+                    onOpenApp = {},
+                    modifier = Modifier.width(412.dp),
+                )
+            }
+        }
+    }
+
+    /** The circle used to disappear the moment the panel it opened appeared. */
+    @Test fun `the circle is there with the panel closed`() {
+        assembly(expanded = false)
+        compose.onNodeWithTag("voice-bubble").assertIsDisplayed()
+        compose.onNodeWithTag("voice-panel").assertDoesNotExist()
+    }
+
+    @Test fun `and still there with the panel open`() {
+        assembly(expanded = true)
+        compose.onNodeWithTag("voice-bubble").assertIsDisplayed()
+        compose.onNodeWithTag("voice-panel").assertIsDisplayed()
+    }
+
+    @Test fun `the circle opens and closes the panel`() {
+        val taps = mutableListOf<Unit>()
+        assembly(expanded = false, onToggleExpanded = { taps += Unit })
+        compose.onNodeWithTag("voice-bubble").performClick()
+        assertEquals(1, taps.size)
+    }
+
+    /** Which way the next tap goes has to be readable without pressing it. */
+    @Test fun `the circle says it will open when the panel is closed`() {
+        assembly(expanded = false)
+        compose.onNodeWithContentDescription("Open Scribe").assertIsDisplayed()
+    }
+
+    @Test fun `and that it will close when the panel is open`() {
+        assembly(expanded = true)
+        compose.onNodeWithContentDescription("Close the Scribe panel").assertIsDisplayed()
+    }
+
+    /** Closing the bubble entirely is a different control from collapsing the panel. */
+    @Test fun `the close badge is not the expand control`() {
+        val closes = mutableListOf<Unit>()
+        val taps = mutableListOf<Unit>()
+        assembly(expanded = true, onToggleExpanded = { taps += Unit }, onClose = { closes += Unit })
+        compose.onNodeWithTag("bubble-close").performClick()
+        assertEquals(1, closes.size)
+        assertEquals(0, taps.size)
+    }
+
+    private fun idle() = EngineState(
+        status = DictationStatus.READY,
+        statusDetail = "Ready",
+        stage = DictationStage.IDLE,
+        lastText = transcript,
+    )
+
+    private fun listening() = EngineState(
+        status = DictationStatus.RECORDING,
+        statusDetail = "Listening…",
+        stage = DictationStage.LISTENING,
+        lastText = transcript,
+    )
 }

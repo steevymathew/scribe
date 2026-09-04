@@ -37,6 +37,8 @@ object NativeWhisper {
 class WhisperTranscriber private constructor(
     private val handle: AtomicLong,
     private val modelName: String,
+    /** The file this was loaded from, so a changed setting can be noticed. */
+    val source: File,
     threads: Int,
 ) : Transcriber, AutoCloseable {
 
@@ -97,7 +99,7 @@ class WhisperTranscriber private constructor(
                 Log.e(TAG, "failed to load ${modelFile.name}")
                 return null
             }
-            return WhisperTranscriber(AtomicLong(handle), modelName, threads)
+            return WhisperTranscriber(AtomicLong(handle), modelName, modelFile, threads)
         }
     }
 }
@@ -113,33 +115,58 @@ class WhisperProvider(
     private val heavyModel: () -> Pair<File, String>,
 ) : TranscriberProvider {
 
-    private var everyday: WhisperTranscriber? = null
-    private var heavy: WhisperTranscriber? = null
+    @Volatile private var everyday: WhisperTranscriber? = null
+    @Volatile private var heavy: WhisperTranscriber? = null
+
+    /**
+     * The loaded everyday model, **checked against the one that is configured**.
+     *
+     * This used to return the cached transcriber the moment it existed, without asking
+     * which model was wanted — so choosing a different model in Settings changed the
+     * stored setting, the "IN USE" tag and nothing else. The first model loaded after
+     * install went on doing every transcription for the life of the process, and the
+     * panel's own label went on naming it, which is exactly what it looked like from
+     * the outside: *"it always says it's using base even when I change the model"*.
+     */
+    @Synchronized
+    override fun everyday(): Transcriber = loaded(everyday, everydayModel(), "everyday")
+        .also { everyday = it }
 
     @Synchronized
-    override fun everyday(): Transcriber {
-        everyday?.let { return it }
-        val (file, name) = everydayModel()
-        val opened = WhisperTranscriber.open(file, name)
-            ?: error("could not load the everyday model $name")
-        everyday = opened
-        return opened
-    }
+    override fun heavy(): Transcriber = loaded(heavy, heavyModel(), "high-accuracy")
+        .also { heavy = it }
 
-    @Synchronized
-    override fun heavy(): Transcriber {
-        heavy?.let { return it }
-        val (file, name) = heavyModel()
-        val opened = WhisperTranscriber.open(file, name)
-            ?: error("could not load the high-accuracy model $name")
-        heavy = opened
-        return opened
+    /**
+     * Reuse [current] if it came from the file that is wanted now; otherwise swap it.
+     *
+     * The old one is closed before the new one is opened. Both are hundreds of megabytes
+     * and holding two at once on a phone is how a process gets killed mid-sentence.
+     */
+    private fun loaded(
+        current: WhisperTranscriber?,
+        wanted: Pair<File, String>,
+        role: String,
+    ): WhisperTranscriber {
+        val (file, name) = wanted
+        current?.let {
+            if (it.source.absolutePath == file.absolutePath) return it
+            Log.i(TAG, "$role model changed to $name; reloading")
+            it.close()
+        }
+        return WhisperTranscriber.open(file, name)
+            ?: error("could not load the $role model $name")
     }
 
     override fun cancelAll() {
+        // Deliberately not synchronized: this is called from the main thread to abandon a
+        // partial, and the lock can be held by the worker for the seconds a model load
+        // takes. `cancel` is safe on a closed transcriber, which is what the fields being
+        // @Volatile is for.
         everyday?.cancel()
         heavy?.cancel()
     }
+
+    private companion object { const val TAG = "WhisperProvider" }
 
     /** Frees both models. Called when the keyboard is torn down for good. */
     @Synchronized

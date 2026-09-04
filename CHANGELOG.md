@@ -8,6 +8,43 @@ A dated record of what changed and when. Newest first. Times are local
 The Android port has its own docs (`android/README.md`, `android/docs/`); this section
 records what shipped and when, so the history is legible from the root of the project.
 
+### 2026-09-03 — v0.8.0: the bubble as one object, and a model setting that means something
+
+From the first real device pass. Most of these are things that were wrong, not missing.
+
+- **Choosing a different speech model did nothing.** `WhisperProvider` returned its cached
+  transcriber the moment one existed, without asking which model was wanted — so the first
+  model loaded after install did every transcription for the life of the process, while
+  the panel's label named it and Settings showed the choice as taken. It now compares the
+  loaded model against the configured one and swaps it, closing the old handle before
+  opening the new; the engine re-warms when the setting changes so the label follows
+  immediately rather than at the next dictation. The requirement is written into
+  `TranscriberProvider`'s contract, where it was missing, and pinned by a test. The panel
+  also names the model the way the settings screen does — "Base (English)", not "base.en".
+- **The circle and the panel are one object.** They used to be a swap: the circle you
+  pressed to open the panel vanished as the panel appeared, and getting back was a
+  different control somewhere else. The circle is now permanent, sits below the panel and
+  aligned to the same edge, and — because the window is anchored to the bottom — does not
+  move when the panel opens above it. It is the expand/collapse control, the drag handle,
+  and where recording state is shown. Dictation starts from the panel's microphone.
+- **The whole assembly drags**, not just the circle, so an open panel can be moved off
+  whatever it is covering; and it is now bounded by the display on all four sides, which
+  mattered much less when the dragged object was a 58 dp circle.
+- **Cancel is a red button** in the control row, present only while there is something to
+  cancel. It was a line in the hamburger menu, which is not where a destructive action
+  belongs. The panel's own collapse control is gone — the circle does that.
+- **"High accuracy" is gone from the models screen.** It chose a second model for a boost
+  mode that nothing could turn on: the keyboard's boost control had been removed on
+  purpose, and this was left behind pointing at it. It set a value, showed a tag, and
+  changed nothing anyone could observe. The engine's per-utterance model switch is kept
+  and documented as unreachable rather than deleted.
+- **The bubble's setup instructions were wrong.** Android blocks accessibility access for
+  sideloaded apps, and the app sent you to a screen where the toggle cannot be enabled.
+  The five taps that actually work — including Settings → Apps → Scribe → ⋮ → Allow
+  restricted settings — are now in the app behind a Steps button, written from what the
+  phone did rather than from what the intent was expected to do.
+- 216 tests, all green, none needing a device. `android/docs/OWNER-VERIFY.md` v0.8.0.
+
 ### 2026-09-03 — v0.7.0: the bubble types, and the keyboard settles
 
 - **The bubble now puts words in the field.** It never did. Insertion had exactly one way

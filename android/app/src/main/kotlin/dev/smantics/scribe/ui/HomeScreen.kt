@@ -260,13 +260,28 @@ private fun WaysToUseCard(
 
         WayRow(
             on = system.bubbleEnabled,
-            title = "A button that appears on text fields",
-            body = "Floats on screen, works in any app. Drag to move, drag down to close.\n" +
+            title = "A floating button",
+            body = "Sits on screen and works in any app. Drag it anywhere, drag it to the " +
+                "bottom to close.\n" +
                 "Needs accessibility access — the only way an app may type into another app.",
-            action = "Turn on",
+            action = if (system.bubbleEnabled) "Accessibility settings" else "Turn on",
             testTag = "way-bubble",
             onAction = onOpenAccessibility,
             recommended = true,
+            // Written from what actually happened on a Fold 7, not from what the intent
+            // was expected to do. Android blocks accessibility access for anything
+            // sideloaded, and the block is a dead end unless you know the way round it:
+            // the toggle greys out, the dialog names "restricted settings", and the
+            // control that lifts it is on a different screen in a different app with no
+            // link from here to there.
+            steps = listOf(
+                "Tap Turn on. Find Scribe in the accessibility list and try to enable it.",
+                "Android says restricted settings are blocking it. Close that dialog.",
+                "Open Android Settings → Apps → Scribe.",
+                "Tap the three dots, top right → Allow restricted settings.",
+                "Go back to Accessibility → Scribe and turn it on. It stays on.",
+            ),
+            stepsTitle = "If Android refuses, it is not broken — do this",
         )
 
         WayRow(
@@ -293,7 +308,12 @@ private fun WayRow(
     testTag: String,
     onAction: () -> Unit,
     recommended: Boolean = false,
+    /** The exact taps, when the obvious route does not work. Hidden until asked for. */
+    steps: List<String> = emptyList(),
+    stepsTitle: String = "How",
 ) {
+    var stepsOpen by remember { mutableStateOf(false) }
+
     Row(
         Modifier.fillMaxWidth().padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(ScribeTokens.gap),
@@ -321,7 +341,42 @@ private fun WayRow(
                 else if (recommended) Tag("EASIEST", ScribeTokens.accent)
             }
             Text(body, color = ScribeTokens.muted, fontSize = 12.sp)
-            SecondaryButton(action, testTag, onClick = onAction)
+            Row(horizontalArrangement = Arrangement.spacedBy(ScribeTokens.gapSmall)) {
+                SecondaryButton(action, testTag, onClick = onAction)
+                if (steps.isNotEmpty()) {
+                    SecondaryButton(
+                        if (stepsOpen) "Hide steps" else "Steps",
+                        "$testTag-steps",
+                        onClick = { stepsOpen = !stepsOpen },
+                    )
+                }
+            }
+            if (stepsOpen && steps.isNotEmpty()) {
+                Column(
+                    Modifier
+                        .testTag("$testTag-step-list")
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        stepsTitle,
+                        color = ScribeTokens.warn,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    steps.forEachIndexed { index, step ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                "${index + 1}.",
+                                color = ScribeTokens.faint,
+                                fontSize = 12.sp,
+                            )
+                            Text(step, color = ScribeTokens.muted, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
         }
     }
 }

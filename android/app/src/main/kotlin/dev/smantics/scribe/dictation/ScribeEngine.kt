@@ -192,8 +192,19 @@ class ScribeEngine private constructor(private val appContext: Context) {
     init {
         scope.launch {
             settings.config.collect { c ->
+                val previous = config
                 config = c
                 _state.value = _state.value.copy(mode = c.mode)
+                // Choosing a different model in Settings has to actually change what runs,
+                // and has to change it *now* rather than at the next dictation — the panel
+                // names the loaded model, so anything less leaves the interface asserting
+                // something untrue. Re-running warmUp reloads the model and re-emits the
+                // events the label is built from.
+                if (warmedUp && c.model != previous.model) {
+                    Log.i(TAG, "speech model changed: ${previous.model} -> ${c.model}")
+                    worker.execute { machine.warmUp() }
+                }
+                if (c.heavyModel != previous.heavyModel) refreshHeavyModelAvailability()
             }
         }
     }
@@ -359,6 +370,18 @@ class ScribeEngine private constructor(private val appContext: Context) {
         DictationService.stop(appContext)
     }
 
+    /**
+     * Ask for the high-accuracy model for this utterance.
+     *
+     * **No surface calls this today.** The keyboard's boost control was removed
+     * deliberately — it made transcripts worse in use and gave no sign from the panel
+     * whether it had done anything — and with it went the last way to reach the heavy
+     * model. The path below it still works and is still tested; it is kept because which
+     * model runs is a decision the engine should be able to take per utterance, and
+     * because deleting a working capability to tidy up an unused entry point is how a
+     * feature gets rebuilt from scratch later. Anything wired to this must show, in the
+     * panel, that it is in effect.
+     */
     fun setBoost(held: Boolean) = machine.setBoost(held)
 
     fun cancel() = machine.cancel()

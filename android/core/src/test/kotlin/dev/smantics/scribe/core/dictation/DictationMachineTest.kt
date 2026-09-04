@@ -63,7 +63,9 @@ class DictationMachineTest {
         var lightBoom: Throwable? = null,
     ) : TranscriberProvider {
         var cancels = 0
+        var everydayCalls = 0
         override fun everyday(): Transcriber {
+            everydayCalls++
             lightBoom?.let { throw it }
             return light
         }
@@ -106,6 +108,33 @@ class DictationMachineTest {
         assertEquals(DictationEvent.ModelLoading("base.en"), events[0])
         assertEquals(DictationEvent.ModelLoaded("base.en", "base.en · CPU"), events[1])
         assertEquals(DictationMachine.Status.READY, m.status)
+    }
+
+    /**
+     * Changing the model in Settings has to change what is announced *and* what is asked
+     * for. The bug this pins had both halves: the provider handed back its first-loaded
+     * model for the life of the process, so the panel went on naming the model chosen at
+     * install however many times the user changed it.
+     */
+    @Test fun `warming up again follows the model that is configured now`() {
+        val provider = FakeProvider()
+        val events = mutableListOf<DictationEvent>()
+        var settings = MachineSettings(mode = Mode.RAW, model = "base.en")
+        val m = DictationMachine(
+            FakeRecorder(), provider, FakeSink(), inline, { settings },
+        ) { events += it }
+
+        m.warmUp()
+        assertEquals(DictationEvent.ModelLoaded("base.en", "base.en · CPU"), events[1])
+
+        settings = MachineSettings(mode = Mode.RAW, model = "small.en")
+        events.clear()
+        m.warmUp()
+
+        assertEquals(DictationEvent.ModelLoading("small.en"), events[0])
+        assertEquals(DictationEvent.ModelLoaded("small.en", "base.en · CPU"), events[1])
+        // Asked again rather than answered from a cache the machine cannot see into.
+        assertEquals(2, provider.everydayCalls)
     }
 
     @Test fun `a model that will not load reports an error rather than pretending`() {

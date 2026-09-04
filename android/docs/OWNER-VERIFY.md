@@ -238,3 +238,79 @@ animation — so this is one observation, not four:
 - [ ] The Raw/Clean toggle still re-renders text already inserted (keyboard only).
 - [ ] The bubble still drags, still drops onto the target to dismiss, and the notification
       still brings it back.
+
+---
+
+# v0.8.0 — the bubble as one object, and a model setting that means something
+
+From the first real device pass. Five of the six items below are things that were wrong
+rather than missing.
+
+## 1 · Turning the bubble on — the instructions were wrong
+
+The app used to say "Turn on" and leave you at Accessibility settings, where a sideloaded
+build cannot be enabled at all. The actual route, as found on the phone, is now in the app
+behind a **Steps** button on the Home screen:
+
+1. Tap Turn on. Find Scribe in the accessibility list and try to enable it.
+2. Android says restricted settings are blocking it. Close that dialog.
+3. Android Settings → Apps → Scribe.
+4. Three dots, top right → **Allow restricted settings**.
+5. Back to Accessibility → Scribe, turn it on.
+
+- [ ] Follow the steps as written on a fresh install. Do they match what the phone does,
+      exactly, including the wording of the dialog? If any step is off, that is worth
+      correcting again — this is the first thing anyone does.
+
+## 2 · The circle and the panel are one object now
+
+- [ ] The circle is on screen whether the panel is open or shut. It never disappears.
+- [ ] Tapping the circle opens the panel; tapping it again closes it. **The circle does not
+      move** when the panel opens — the panel grows upward from it.
+- [ ] The circle is lit teal while the panel is open, and red while recording.
+- [ ] Dictation now starts from the **microphone in the panel**, not from the circle.
+- [ ] Drag the circle: the whole thing moves, panel included.
+- [ ] Drag the *panel* — its edges, the control row, the status line: it moves too. Over
+      the transcript a vertical drag scrolls the text instead, which is deliberate; the
+      circle is always a handle.
+- [ ] Drag it to the top of the screen and to the far left. It should stop at the edges
+      rather than disappearing off them.
+- [ ] Drag it to the bottom and drop it on the target: still closes.
+
+## 3 · Cancel
+
+- [ ] While dictating there is a **red** button at the left of the row. It discards the
+      utterance. It is the only red control there.
+- [ ] It is not there when nothing is running.
+- [ ] "Discard" is gone from the hamburger menu — it is this button now.
+
+## 4 · The model setting actually changes the model
+
+This was a real bug: the transcriber was loaded once and cached for the life of the
+process, so choosing a different model changed the setting, the IN USE tag, and nothing
+else. The panel then went on naming the old one, which is what you saw.
+
+- [ ] Settings → Models → download Small (English) → **Use**.
+- [ ] Open the bubble's hamburger menu. It should say **Small (English)** — the same name
+      the settings screen uses — within a second or two, without reopening the app.
+- [ ] Dictate. Is it noticeably slower and more accurate on names than Base was? That is
+      the confirmation the model itself changed rather than only the label.
+- [ ] Switch back to Base (English). The label should follow again.
+- [ ] `adb logcat -s ScribeEngine -s WhisperProvider` shows `speech model changed:
+      base.en -> small.en` and `everyday model changed to Small (English); reloading`.
+
+## 5 · "High accuracy" is gone
+
+It set a second model for a boost mode that no control could turn on — the keyboard's
+boost button had been removed on purpose, and this was left behind pointing at it. So it
+set a value, showed a tag, and changed nothing observable.
+
+- [ ] Settings → Models shows one button per installed model: **Use**. No "High accuracy",
+      no HIGH ACCURACY tag.
+- [ ] The card says one model is in use at a time and that Use takes effect straight away.
+
+## 6 · Nothing else moved
+
+- [ ] Insertion still works (v0.7.0 §1), and still says so when it does not.
+- [ ] The keyboard still opens and closes smoothly (v0.7.0 §2).
+- [ ] The bubble's close badge still hides it, and the notification still brings it back.

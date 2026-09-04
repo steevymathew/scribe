@@ -56,6 +56,13 @@ interface Transcriber {
  *
  * The heavy model is loaded on first use rather than at startup — it is several hundred
  * megabytes and most dictation never needs it.
+ *
+ * **Each call must return a transcriber for the model that is configured now.** An
+ * implementation is expected to cache — loading a ggml model costs hundreds of megabytes
+ * and a second or two — but a cache that is never invalidated makes the model setting
+ * inert: the first model loaded after install goes on doing every transcription for the
+ * life of the process while the interface reports whatever the user last chose. That
+ * shipped, and from outside it looked like the setting being ignored, which it was.
  */
 interface TranscriberProvider {
     fun everyday(): Transcriber

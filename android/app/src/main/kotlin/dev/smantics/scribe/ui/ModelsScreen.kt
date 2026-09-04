@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.smantics.scribe.BuildConfig
 import dev.smantics.scribe.NativeLibs
-import dev.smantics.scribe.core.model.ModelKind
 import dev.smantics.scribe.core.model.ModelRegistry
 import dev.smantics.scribe.core.model.ModelSpec
 import dev.smantics.scribe.dictation.ScribeEngine
@@ -66,12 +65,18 @@ fun ModelsScreen(engine: ScribeEngine, config: ScribeConfig, onBack: () -> Unit)
                 color = ScribeTokens.muted,
                 fontSize = 13.sp,
             )
+            Text(
+                "One of these is in use at a time — the one marked IN USE. Tap Use on " +
+                    "another and it takes over straight away, for the keyboard and the " +
+                    "button alike.",
+                color = ScribeTokens.faint,
+                fontSize = 12.sp,
+            )
             ModelRegistry.speech.forEach { spec ->
                 ModelRow(
                     spec = spec,
                     engine = engine,
                     inUse = spec.id == config.model,
-                    asBoost = spec.id == config.heavyModel,
                     totalRamMb = totalRamMb,
                     progress = progress[spec.id],
                     refreshToken = refresh,
@@ -87,9 +92,6 @@ fun ModelsScreen(engine: ScribeEngine, config: ScribeConfig, onBack: () -> Unit)
                         refresh++
                     },
                     onUse = { scope.launch { engine.settings.update { it.copy(model = spec.id) } } },
-                    onUseAsBoost = {
-                        scope.launch { engine.settings.update { it.copy(heavyModel = spec.id) } }
-                    },
                 )
             }
         }
@@ -140,7 +142,6 @@ fun ModelsScreen(engine: ScribeEngine, config: ScribeConfig, onBack: () -> Unit)
                         spec = spec,
                         engine = engine,
                         inUse = spec.id == config.polishModel && config.polishEnabled,
-                        asBoost = false,
                         totalRamMb = totalRamMb,
                         progress = progress[spec.id],
                         refreshToken = refresh,
@@ -162,7 +163,6 @@ fun ModelsScreen(engine: ScribeEngine, config: ScribeConfig, onBack: () -> Unit)
                                 engine.reloadPolisher()
                             }
                         },
-                        onUseAsBoost = {},
                     )
                 }
             }
@@ -191,14 +191,12 @@ private fun ModelRow(
     spec: ModelSpec,
     engine: ScribeEngine,
     inUse: Boolean,
-    asBoost: Boolean,
     totalRamMb: Int,
     progress: DownloadProgress?,
     refreshToken: Int,
     onDownload: () -> Unit,
     onDelete: () -> Unit,
     onUse: () -> Unit,
-    onUseAsBoost: () -> Unit,
 ) {
     // Re-read from disk whenever a download or delete has completed.
     val state = remember(spec.id, refreshToken, progress) { engine.models.state(spec) }
@@ -226,7 +224,6 @@ private fun ModelRow(
                         fontWeight = FontWeight.Medium,
                     )
                     if (inUse) Tag("IN USE", ScribeTokens.accent)
-                    if (asBoost) Tag("HIGH ACCURACY", ScribeTokens.warn)
                     if (spec.bundled) Tag("INCLUDED", ScribeTokens.good)
                 }
                 Text(
@@ -265,10 +262,13 @@ private fun ModelRow(
 
         Row(horizontalArrangement = Arrangement.spacedBy(ScribeTokens.gapSmall)) {
             when {
-                installed && !inUse && spec.kind == ModelKind.SPEECH -> {
-                    SecondaryButton("Use", "use-${spec.id}", onClick = onUse)
-                    SecondaryButton("High accuracy", "boost-${spec.id}", onClick = onUseAsBoost)
-                }
+                // There used to be a second button here, "High accuracy", which chose a
+                // *different* model for a boost mode. Nothing could turn that mode on: the
+                // keyboard's boost control had been removed on purpose — it made
+                // transcripts worse and gave no sign it had done anything — and this was
+                // left behind pointing at it. So it set a value, showed a tag, and changed
+                // nothing that anybody could observe. One model, chosen once, is the whole
+                // design; a second slot that did nothing was worse than no slot at all.
                 installed && !inUse -> SecondaryButton("Use", "use-${spec.id}", onClick = onUse)
                 !installed && progress !is DownloadProgress.Running -> PrimaryButton(
                     label = if (progress is DownloadProgress.Failed) "Resume" else "Download",

@@ -40,9 +40,8 @@ import dev.smantics.scribe.dictation.DictationStage
 import dev.smantics.scribe.dictation.ScribeEngine
 import dev.smantics.scribe.ime.ImeComposeHost
 import dev.smantics.scribe.ui.MainActivity
+import dev.smantics.scribe.ui.components.BubbleAssembly
 import dev.smantics.scribe.ui.components.DismissTarget
-import dev.smantics.scribe.ui.components.VoiceBubble
-import dev.smantics.scribe.ui.components.VoicePanel
 import dev.smantics.scribe.ui.components.modelLabelFor
 import dev.smantics.scribe.ui.theme.ScribeTheme
 import kotlinx.coroutines.CoroutineScope
@@ -275,8 +274,8 @@ class ScribeAccessibilityService : AccessibilityService() {
                 ScribeTheme {
                     // Collapse once the whole sequence, insertion included, is over —
                     // unless it did not work. A panel that closes on failure exactly as it
-                    // closes on success is how this bug stayed invisible: the words were
-                    // shown being assembled and then the bubble simply shrank.
+                    // closes on success is how the insertion bug stayed invisible: the
+                    // words were shown being assembled and then the bubble simply shrank.
                     LaunchedEffect(state.stage, insertFailure) {
                         if (state.stage == DictationStage.IDLE &&
                             !engine.isDictating &&
@@ -285,56 +284,52 @@ class ScribeAccessibilityService : AccessibilityService() {
                             expanded = false
                         }
                     }
-                    if (expanded) {
-                        VoicePanel(
-                            state = state,
-                            modelLabel = modelLabelFor(state),
-                            onToggleMode = { engine.toggleMode() },
-                            onStop = { stopDictation() },
-                            onCancel = {
-                                engine.cancelToggle()
-                                insertFailure = null
-                                expanded = false
-                            },
-                            onCollapse = {
-                                if (engine.isDictating) engine.cancelToggle()
-                                insertFailure = null
-                                expanded = false
-                            },
-                            onOpenApp = { openApp() },
-                            failure = insertFailure,
-                            onRetryInsert = { retryInsert() },
-                            onDismissFailure = {
-                                insertFailure = null
-                                expanded = false
-                            },
-                        )
-                    } else {
-                        VoiceBubble(
-                            state = state,
-                            onClick = { startDictation() },
-                            onClose = { dismiss() },
-                            // Dragged with the finger, like every other floating control on
-                            // the platform. Position is remembered for the session, so it
-                            // stays where it was put.
-                            // Dragged with the finger, and dropped onto the target at the
-                            // bottom of the screen to dismiss — the gesture every other
-                            // floating control on Android uses, so it needs no explaining.
-                            modifier = Modifier.pointerInput(Unit) {
-                                detectDragGestures(
-                                    onDragStart = { dragging = true },
-                                    onDragEnd = {
-                                        dragging = false
-                                        if (overTarget) dismiss() else settle()
-                                    },
-                                    onDragCancel = { dragging = false },
-                                ) { change, dragAmount ->
-                                    change.consume()
-                                    moveBy(dragAmount.x, dragAmount.y)
-                                }
-                            },
-                        )
-                    }
+
+                    // One object, dragged as one thing: see BubbleAssembly for why the
+                    // circle sits below the panel and why that keeps it still.
+                    BubbleAssembly(
+                        state = state,
+                        expanded = expanded,
+                        modelLabel = modelLabelFor(state),
+                        onToggleExpanded = {
+                            // The circle opens and closes the panel. Nothing else,
+                            // deliberately: a control that sometimes toggles a panel and
+                            // sometimes starts recording is one you have to watch to use.
+                            if (expanded && engine.isDictating) engine.cancelToggle()
+                            insertFailure = null
+                            expanded = !expanded
+                        },
+                        onClose = { dismiss() },
+                        onToggleDictation = { toggleDictation() },
+                        onToggleMode = { engine.toggleMode() },
+                        onCancel = {
+                            engine.cancelToggle()
+                            insertFailure = null
+                        },
+                        onOpenApp = { openApp() },
+                        failure = insertFailure,
+                        onRetryInsert = { retryInsert() },
+                        onDismissFailure = { insertFailure = null },
+                        // The drag lives on the whole assembly, not just the circle, so an
+                        // open panel can be moved off whatever it is covering. Taps still
+                        // reach the buttons inside: a child claims the tap, this claims the
+                        // drag once it passes the touch slop.
+                        //
+                        // The one place a vertical drag does *not* move the window is over
+                        // the transcript, which scrolls — a child scroller takes vertical
+                        // drags before this sees them. That is the right way round: long
+                        // transcripts have to be readable, and the circle underneath is
+                        // always a handle.
+                        modifier = Modifier.pointerInput(Unit) {
+                            detectDragGestures(
+                                onDragEnd = { if (overTarget) dismiss() else settle() },
+                                onDragCancel = { settle() },
+                            ) { change, dragAmount ->
+                                change.consume()
+                                moveBy(dragAmount.x, dragAmount.y)
+                            }
+                        },
+                    )
                 }
             }
         }
@@ -349,9 +344,6 @@ class ScribeAccessibilityService : AccessibilityService() {
     /** Remembered so a drag can adjust it without rebuilding the window. */
     private var overlayParams: WindowManager.LayoutParams? = null
 
-    /** True while a finger is moving the bubble; shows the dismiss target. */
-    private var dragging by mutableStateOf(false)
-
     /** True when the bubble is over the dismiss target and letting go would close it. */
     private var overTarget by mutableStateOf(false)
 
@@ -364,8 +356,16 @@ class ScribeAccessibilityService : AccessibilityService() {
     private fun moveBy(dx: Float, dy: Float) {
         val params = overlayParams ?: return
         val view = overlay ?: return
-        params.x = (params.x - dx).toInt().coerceAtLeast(0)
-        params.y = (params.y - dy).toInt().coerceAtLeast(0)
+        // Bounded at both ends, not just at zero. The window is WRAP_CONTENT with
+        // FLAG_LAYOUT_NO_LIMITS, so it is free to sit off the edge of the display — which
+        // was survivable when the thing being dragged was a 58 dp circle and is not now
+        // that an open panel goes with it. `view.width/height` is the assembly's real
+        // measured size, so the limit follows the panel opening and closing.
+        val metrics = resources.displayMetrics
+        val maxX = (metrics.widthPixels - view.width).coerceAtLeast(0)
+        val maxY = (metrics.heightPixels - view.height).coerceAtLeast(0)
+        params.x = (params.x - dx).toInt().coerceIn(0, maxX)
+        params.y = (params.y - dy).toInt().coerceIn(0, maxY)
         runCatching { windowManager?.updateViewLayout(view, params) }
 
         showDismissTarget()
@@ -506,13 +506,19 @@ class ScribeAccessibilityService : AccessibilityService() {
     // -------------------------------------------------------------- dictation
 
     /**
-     * One tap starts, one tap stops — the same toggle the keyboard uses.
+     * One tap starts, one tap finishes — the same toggle the keyboard uses.
      *
-     * The panel stays expanded through the reveal and closes once the text has been
-     * inserted, so the bubble is never sitting open over a finished job.
+     * Driven from the panel's microphone button rather than the circle: the circle opens
+     * and closes the panel now, and one control that does two different things depending
+     * on state is a control you have to watch to use. The panel stays open through the
+     * reveal and closes once the text is in, so it is never sitting open over a finished
+     * job — but only when the insertion actually worked.
      */
-    private fun startDictation() {
-        expanded = true
+    private fun toggleDictation() {
+        if (engine.isDictating) {
+            engine.stopToggle()
+            return
+        }
         // A new utterance clears the last one's failure: whatever went wrong, the user has
         // moved on and the stale message would only be in the way.
         insertFailure = null
@@ -523,10 +529,6 @@ class ScribeAccessibilityService : AccessibilityService() {
             // this failed the first time it went on a phone.
             Log.w(TAG, "dictation did not start: ${engine.state.value.statusDetail}")
         }
-    }
-
-    private fun stopDictation() {
-        if (engine.isDictating) engine.stopToggle() else engine.cancelToggle()
     }
 
     private fun openApp() {

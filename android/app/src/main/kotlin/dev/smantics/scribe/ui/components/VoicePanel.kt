@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.smantics.scribe.core.clean.Mode
+import dev.smantics.scribe.core.model.ModelRegistry
 import dev.smantics.scribe.dictation.DictationStage
 import dev.smantics.scribe.dictation.EngineState
 import dev.smantics.scribe.ui.theme.DictationStatus
@@ -63,9 +64,9 @@ fun VoicePanel(
     state: EngineState,
     modelLabel: String,
     onToggleMode: () -> Unit,
-    onStop: () -> Unit,
+    /** Start dictating, or finish and insert. One control, both ways round. */
+    onToggleDictation: () -> Unit,
     onCancel: () -> Unit,
-    onCollapse: () -> Unit,
     onOpenApp: () -> Unit,
     modifier: Modifier = Modifier,
     /**
@@ -96,11 +97,12 @@ fun VoicePanel(
             horizontalArrangement = Arrangement.spacedBy(ScribeTokens.gapSmall),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Collapse sits first, exactly where the bubble was before it expanded, so
-            // putting the panel away is the same spot that opened it rather than a hunt
-            // across the screen.
-            CollapseButton(onCollapse)
-            InsertButton(state, onStop)
+            // Cancel first, and only while there is something to cancel. It is the one
+            // control here that throws work away, so it is the one control here that is
+            // red — an unlabelled grey circle beside four other unlabelled grey circles
+            // is not a cancel button, it is a guess.
+            if (state.stage != DictationStage.IDLE) CancelButton(onCancel)
+            MicButton(state, onToggleDictation)
             Waveform(
                 level = state.level,
                 stage = state.stage,
@@ -160,13 +162,10 @@ fun VoicePanel(
                     Modifier.padding(top = 2.dp),
                     horizontalArrangement = Arrangement.spacedBy(ScribeTokens.gapSmall),
                 ) {
+                    // Discard used to live here as well. It does not any more: a
+                    // destructive action buried in a drawer is either missed or found by
+                    // accident, and it is now a red button in the row above.
                     SecondaryButton("Open Scribe", "voice-open-app", onClick = onOpenApp)
-                    SecondaryButton(
-                        "Discard",
-                        "voice-discard",
-                        tint = ScribeTokens.rec,
-                        onClick = onCancel,
-                    )
                 }
             }
         }
@@ -237,68 +236,79 @@ private fun MenuRow(label: String, value: String) {
     }
 }
 
-/** Put the panel away again, back to the small bubble. */
+/**
+ * Throw the utterance away.
+ *
+ * Red, filled, and first in the row. Every other control here is a grey circle, so the one
+ * that destroys work has to stop looking like them — "make the cancel button an obvious
+ * cancel button" was the note, and it was right: it had been a line in the hamburger menu.
+ */
 @Composable
-private fun CollapseButton(onCollapse: () -> Unit) {
+private fun CancelButton(onCancel: () -> Unit) {
     Box(
         Modifier
-            .testTag("voice-collapse")
-            .size(32.dp)
-            .neuInset(CircleShape, depth = 0.7f)
-            .semantics { contentDescription = "Shrink Scribe back to the button" }
-            .clickable(onClick = onCollapse),
+            .testTag("voice-cancel")
+            .size(38.dp)
+            .neuActive(CircleShape, ScribeTokens.rec)
+            .semantics { contentDescription = "Discard what I said" }
+            .clickable(onClick = onCancel),
         contentAlignment = Alignment.Center,
     ) {
-        Glyph(GlyphName.RESIZE, ScribeTokens.muted, size = 15.dp, thickness = 1.6.dp)
+        Glyph(GlyphName.CLOSE, ScribeTokens.rec, size = 17.dp, thickness = 2.dp)
     }
 }
 
 /**
- * Finish, and put the words in the field.
+ * Start dictating, then finish and insert. One control, two jobs, in one place.
  *
- * An arrow dropping onto a line rather than a red dot: a red circle reads as "recording",
- * not as "press me to finish", and the first version left people looking for a separate
- * button that did not exist.
+ * The same shape the keyboard uses — a microphone when idle, an insert arrow while
+ * listening — because they are the same action and having them differ between the two
+ * surfaces is how a user learns one and is surprised by the other. It became a starter as
+ * well as a finisher when the circle took over expanding and collapsing: something in the
+ * panel has to begin the recording.
  */
 @Composable
-private fun InsertButton(state: EngineState, onStop: () -> Unit) {
-    val pulsing = state.status == DictationStatus.RECORDING ||
-        state.status == DictationStatus.TRANSCRIBING
-    // Only composed while it pulses: an infinite transition keeps the frame clock awake
-    // for as long as it exists, and this panel sits over whatever the user is writing in.
-    val alpha = if (pulsing) dotPulse() else 1f
+private fun MicButton(state: EngineState, onToggle: () -> Unit) {
     val listening = state.stage == DictationStage.LISTENING
+    val finishing = state.stage != DictationStage.IDLE && !listening
+    // Composed only while it breathes; see the note on the waveform's motion.
+    val alpha = if (finishing) dotPulse() else 1f
+
     Box(
         Modifier
             .testTag("voice-insert")
-            .size(38.dp)
+            .size(42.dp)
             .then(
-                if (listening) {
-                    Modifier.neuActive(CircleShape, ScribeTokens.accent)
-                } else {
-                    Modifier.neuInset(CircleShape, depth = 0.7f)
+                when {
+                    listening -> Modifier.neuActive(CircleShape, ScribeTokens.accent)
+                    finishing -> Modifier.neuInset(CircleShape, depth = 0.8f)
+                    else -> Modifier.neuRaised(CircleShape)
                 },
             )
             .semantics {
-                contentDescription = if (listening) "Insert what I said" else "Working on it"
+                contentDescription = when {
+                    listening -> "Insert what I said"
+                    finishing -> "Working on it"
+                    else -> "Start dictating"
+                }
             }
-            .clickable(enabled = listening, onClick = onStop),
+            .clickable(enabled = !finishing, onClick = onToggle),
         contentAlignment = Alignment.Center,
     ) {
         Glyph(
             if (listening) GlyphName.INSERT else GlyphName.MIC,
-            if (listening) {
-                ScribeTokens.accent
-            } else {
-                statusColor(state.status).copy(alpha = if (pulsing) alpha else 1f)
+            when {
+                listening -> ScribeTokens.accent
+                finishing -> statusColor(state.status).copy(alpha = alpha)
+                else -> statusColor(state.status)
             },
-            size = 18.dp,
-            thickness = 1.8.dp,
+            size = 19.dp,
+            thickness = 1.9.dp,
         )
     }
 }
 
-/** The breath the button takes while Scribe is hearing or decoding, and only then. */
+/** The breath the button takes while Scribe is decoding, and only then. */
 @Composable
 private fun dotPulse(): Float {
     val transition = rememberInfiniteTransition(label = "voice-dot")
@@ -347,15 +357,77 @@ private fun HamburgerButton(open: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * The collapsed bubble: the smallest thing that says "Scribe is here".
+ * The bubble as one object: the panel, when it is open, sitting on top of the circle.
+ *
+ * The layout is the point. The circle is aligned to the same edge as the panel and sits
+ * below it, and the window it lives in is anchored to the bottom of the screen — so
+ * opening the panel grows the window *upward* and the circle does not move. Press it, the
+ * panel appears above your finger; press it again, the panel goes and your finger is still
+ * on the circle. Nothing to chase.
+ *
+ * [modifier] is where the service puts the drag handler, so the whole assembly moves
+ * together rather than the circle escaping its own panel.
+ */
+@Composable
+fun BubbleAssembly(
+    state: EngineState,
+    expanded: Boolean,
+    modelLabel: String,
+    onToggleExpanded: () -> Unit,
+    onClose: () -> Unit,
+    onToggleDictation: () -> Unit,
+    onToggleMode: () -> Unit,
+    onCancel: () -> Unit,
+    onOpenApp: () -> Unit,
+    modifier: Modifier = Modifier,
+    failure: String? = null,
+    onRetryInsert: () -> Unit = {},
+    onDismissFailure: () -> Unit = {},
+) {
+    Column(
+        modifier.testTag("bubble-assembly"),
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        if (expanded) {
+            VoicePanel(
+                state = state,
+                modelLabel = modelLabel,
+                onToggleMode = onToggleMode,
+                onToggleDictation = onToggleDictation,
+                onCancel = onCancel,
+                onOpenApp = onOpenApp,
+                failure = failure,
+                onRetryInsert = onRetryInsert,
+                onDismissFailure = onDismissFailure,
+            )
+        }
+        VoiceBubble(
+            state = state,
+            expanded = expanded,
+            onClick = onToggleExpanded,
+            onClose = onClose,
+        )
+    }
+}
+
+/**
+ * The circle. It is on screen the whole time now, panel open or closed.
+ *
+ * It used to be one half of a swap — circle *or* panel, never both — which meant the thing
+ * you had pressed to open the panel was gone the moment it opened, and getting back was a
+ * different control in a different place. Now the circle is the constant: it opens the
+ * panel, it closes it again, it is the handle the whole thing is dragged by, and it is
+ * where the recording state is shown. The panel hangs off it.
  *
  * It carries its own close badge. An overlay that appears over other apps and cannot be
  * dismissed without going to system settings is the kind of thing people uninstall, and
- * "there is no X" was the first thing said about the previous version.
+ * "there is no X" was the first thing said about the earliest version.
  */
 @Composable
 fun VoiceBubble(
     state: EngineState,
+    expanded: Boolean,
     onClick: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -371,13 +443,18 @@ fun VoiceBubble(
                 .testTag("voice-bubble")
                 .size(58.dp)
                 .then(
-                    if (recording) {
-                        Modifier.neuActive(CircleShape, ScribeTokens.rec)
-                    } else {
-                        Modifier.neuInset(CircleShape)
+                    when {
+                        recording -> Modifier.neuActive(CircleShape, ScribeTokens.rec)
+                        // Open, but not listening: lit faintly, so the circle says which
+                        // way the next tap goes rather than looking identical either way.
+                        expanded -> Modifier.neuActive(CircleShape, ScribeTokens.accent)
+                        else -> Modifier.neuInset(CircleShape)
                     },
                 )
-                .semantics { contentDescription = "Dictate with Scribe" }
+                .semantics {
+                    contentDescription =
+                        if (expanded) "Close the Scribe panel" else "Open Scribe"
+                }
                 .clickable(onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
@@ -410,11 +487,17 @@ fun VoiceBubble(
     }
 }
 
-/** The one-line summary the panel's menu shows for the loaded model. */
-fun modelLabelFor(state: EngineState): String = when {
-    state.modelName.isNotEmpty() && state.boostActive -> "${state.modelName} · high accuracy"
-    state.modelName.isNotEmpty() -> state.modelName
-    else -> "loading…"
+/**
+ * The one-line summary the panel's menu shows for the loaded model.
+ *
+ * Resolved to the same display name the models screen uses — "Base (English)", not
+ * "base.en". The panel and Settings naming the same model two different ways is a small
+ * thing that costs a moment every time somebody checks whether their choice took effect.
+ */
+fun modelLabelFor(state: EngineState): String {
+    if (state.modelName.isEmpty()) return "loading…"
+    val name = ModelRegistry.byId(state.modelName)?.displayName ?: state.modelName
+    return if (state.boostActive) "$name · high accuracy" else name
 }
 
 /**
