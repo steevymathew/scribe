@@ -8,6 +8,34 @@ A dated record of what changed and when. Newest first. Times are local
 The Android port has its own docs (`android/README.md`, `android/docs/`); this section
 records what shipped and when, so the history is legible from the root of the project.
 
+### 2026-09-05 — v0.14.0: one handle, and the screen edge coming inward
+
+- **One drag handle, and it is the only part of the card that is not a key.** A field of
+  embossed dots across the top: brightest and largest in the middle, dissolving to nothing
+  before the sides, so it reads as a texture on the surface rather than a component with a
+  boundary. It replaces the divots cut into the left, right and bottom edges — three notches
+  out of a clean slab, and the bottom one sat close enough to the space bar to be caught by
+  a thumb aiming at it. Drag it sideways to page, down to lay the card flat.
+- **The keyboard's top corners curve inward.** A rounded corner rounds the black *off* and
+  makes the keyboard a card lying on the app; inverting it does the opposite — the ground
+  stays full height at the far left and right and sweeps down into the flat top edge, so
+  what you see is the display's own edge coming in. `CoveTopShape`, drawn rather than
+  borrowed, because no standard shape adds area at a corner.
+- **Autocorrect was findable only by scrolling.** The typing card was six cards down; it is
+  now second, directly under the card that turns the keyboard on, and labelled
+  TYPING · AUTOCORRECT.
+- **The grab highlight is no longer teal.** The accent means "recording" or "this is the
+  answer", and spending it on a drag devalues it everywhere else; a brighter version of the
+  card's own hairline says the same thing quietly.
+- **Emoji need a deliberate press.** They committed on touch-down like a letter, so a thumb
+  brushing across the grid left a trail of faces. A brush now does nothing; a press of
+  110 ms commits while the finger is still down. The keys are narrower too — nine per row.
+- The number row splits with the letters again: it is part of that card and looked wrong
+  left whole above two split halves. The symbols page still does not split.
+- The keyboard's subtitle in the system list is "Voice-to-text keyboard" rather than a
+  second "Scribe".
+- 293 tests, all green.
+
 ### 2026-09-05 — v0.13.0: the card only moves from its edges
 
 - **The drag was eager and now it is confined.** A gesture recognised anywhere on the card

@@ -240,13 +240,13 @@ object KeyboardLayout {
     /**
      * Whether a row is split down the middle on a wide screen.
      *
-     * Only the letters. A number row split in two puts `5` and `6` a hand apart for no
-     * reason — the stagger exists so each *hand* keeps its own half of the alphabet, and
-     * digits and symbols are not typed in that two-thumbed way. The bottom row is never
-     * split either: the space bar is one key and cannot be in two places.
+     * Every character row of the letters card, digits included — the number row reads as
+     * part of that card and looked wrong left whole above two split halves. The symbols
+     * page is not split, and the bottom row never is: the space bar is one key and cannot
+     * be in two places.
      */
     fun splittable(page: KeyboardPage, row: List<Key>): Boolean =
-        page == KeyboardPage.LETTERS && row.all { it is Key.Char && it.lower[0].isLetter() }
+        page == KeyboardPage.LETTERS && row.all { it is Key.Char }
 
     /**
      * Split a row for a wide screen, **repeating the middle key on both halves**.

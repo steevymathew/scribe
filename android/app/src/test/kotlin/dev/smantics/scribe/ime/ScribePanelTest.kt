@@ -135,14 +135,19 @@ class ScribePanelTest {
     }
 
     /**
-     * The grips are the only sign the drag band exists, and since the card can now *only*
-     * be moved from that band, they are the only sign the gesture exists at all.
+     * One handle, and it is the only part of the card that is not a key.
+     *
+     * The divots cut into the left, right and bottom edges are gone — three notches out of a
+     * clean slab, and the bottom one sat close enough to the space bar to be caught by a
+     * thumb aiming at it. Everything the card does is now this.
      */
-    @Test fun `the edges say which way the card goes`() {
+    @Test fun `the card has one handle and no edge grips`() {
         panel()
         showKeys()
-        compose.onNodeWithContentDescription("Drag for emoji").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Drag for symbols").assertIsDisplayed()
+        compose.onNodeWithTag("card-handle").assertIsDisplayed()
+        compose.onNodeWithTag("grip-left").assertDoesNotExist()
+        compose.onNodeWithTag("grip-right").assertDoesNotExist()
+        compose.onNodeWithTag("grip-bottom").assertDoesNotExist()
     }
 
     /** The emoji page is reachable without knowing the gesture. */
@@ -548,10 +553,9 @@ class ScribePanelTest {
             "Symbols",
             "Shift",
             "Open Scribe",
-            // The card can only be dragged from its edge band, so the grips that mark it
-            // are the only sign the gesture exists and have to be readable too.
-            "Drag for emoji",
-            "Drag for symbols",
+            // The handle is the only way to move the card, so it is the only sign the
+            // gesture exists and has to be readable too.
+            "Drag to move the keyboard",
         ).forEach { label ->
             val nodes = compose.onAllNodesWithContentDescription(label).fetchSemanticsNodes()
             assertTrue("no node described as \"$label\"", nodes.isNotEmpty())

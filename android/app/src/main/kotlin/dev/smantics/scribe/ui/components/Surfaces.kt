@@ -23,6 +23,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.smantics.scribe.ui.theme.ScribeTokens
@@ -205,5 +213,39 @@ fun NavRow(title: String, detail: String, testTag: String, onClick: () -> Unit) 
             Text(detail, color = ScribeTokens.faint, fontSize = 12.sp)
         }
         Glyph(GlyphName.ARROW_RIGHT, ScribeTokens.faint, size = 18.dp, thickness = 1.6.dp)
+    }
+}
+
+/**
+ * The panel's silhouette: a rectangle whose top corners curve **the other way**.
+ *
+ * An ordinary rounded corner rounds the black *off*, which makes the keyboard a card lying
+ * on the app. Inverting it does the opposite — the ground stays full height at the far left
+ * and right and sweeps down into the flat top edge, so what you see is the screen's own
+ * edge coming inward and the keys sitting in the cove it makes. The keyboard stops being
+ * something on top of the display and becomes part of it.
+ *
+ * Drawn rather than borrowed because no standard shape does this: `RoundedCornerShape`
+ * removes area at the corners, and this adds it.
+ */
+class CoveTopShape(private val radius: Dp) : Shape {
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density,
+    ): Outline {
+        val r = with(density) { radius.toPx() }.coerceAtMost(size.width / 2f)
+        val path = Path().apply {
+            // Full height at the very left, sweeping down to the flat top edge.
+            moveTo(0f, 0f)
+            arcTo(Rect(0f, -r, 2 * r, r), 180f, -90f, false)
+            lineTo(size.width - r, r)
+            // And back up at the right.
+            arcTo(Rect(size.width - 2 * r, -r, size.width, r), 90f, -90f, false)
+            lineTo(size.width, size.height)
+            lineTo(0f, size.height)
+            close()
+        }
+        return Outline.Generic(path)
     }
 }

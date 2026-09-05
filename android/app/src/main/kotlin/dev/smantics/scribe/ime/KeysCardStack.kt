@@ -8,7 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -72,11 +72,10 @@ fun KeysCardStack(
     /** Called once the drag has been claimed, so a key can take back what it typed. */
     onDragClaimed: () -> Unit,
     modifier: Modifier = Modifier,
-    pageContent: @Composable BoxScope.(KeyboardPage) -> Unit,
+    pageContent: @Composable (KeyboardPage) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val metrics = LocalDensity.current
-    val haptics = rememberKeyHaptics()
     val grabHaptics = rememberGrabHaptics()
 
     val fullHeight = KeyMetrics.keysHeight + KeyMetrics.cardPadding * 2
@@ -153,24 +152,6 @@ fun KeysCardStack(
                         scaleX = lift
                         scaleY = lift
                     }
-                    .cardGestures(
-                        slide = { slide },
-                        setSlide = { slide = it },
-                        upright = { upright },
-                        setUpright = { upright = it },
-                        settling = { settling },
-                        setSettling = { settling = it },
-                        width = { widthPx },
-                        setGrabbed = { grabbed = it },
-                        page = { currentPage },
-                        setIncoming = { incoming = it },
-                        onPage = { currentOnPage(it) },
-                        onOpenChange = { currentOnOpen(it) },
-                        onDragClaimed = { currentOnClaimed() },
-                        haptics = haptics,
-                        grabHaptics = grabHaptics,
-                        scope = scope,
-                    ),
             ) {
                 CardFace(
                     grabbed = grabbed,
@@ -178,25 +159,33 @@ fun KeysCardStack(
                         .testTag("keys-card")
                         .graphicsLayer { translationX = slide },
                 ) {
-                    pageContent(currentPage)
-                    // The grips are the only sign the band exists, so they sit exactly
-                    // where it does and light up when it is being used.
-                    EdgeGrip(
-                        page = currentPage,
-                        toLeft = true,
-                        active = grabbed && slide > 0f,
-                        modifier = Modifier.align(Alignment.CenterStart),
-                    )
-                    EdgeGrip(
-                        page = currentPage,
-                        toLeft = false,
-                        active = grabbed && slide < 0f,
-                        modifier = Modifier.align(Alignment.CenterEnd),
-                    )
-                    BottomGrip(
-                        active = grabbed && upright < 1f,
-                        modifier = Modifier.align(Alignment.BottomCenter),
-                    )
+                    Column(Modifier.fillMaxWidth()) {
+                        // The only part of the card that is not a key, and the only part
+                        // that moves it. Everything else — the edge divots, the bottom
+                        // band — is gone: the divots cut into a clean slab, and the bottom
+                        // one sat close enough to the space bar to be caught by a thumb.
+                        CardHandle(
+                            active = grabbed,
+                            modifier = Modifier.cardGestures(
+                                slide = { slide },
+                                setSlide = { slide = it },
+                                upright = { upright },
+                                setUpright = { upright = it },
+                                settling = { settling },
+                                setSettling = { settling = it },
+                                width = { widthPx },
+                                setGrabbed = { grabbed = it },
+                                page = { currentPage },
+                                setIncoming = { incoming = it },
+                                onPage = { currentOnPage(it) },
+                                onOpenChange = { currentOnOpen(it) },
+                                onDragClaimed = { currentOnClaimed() },
+                                grabHaptics = grabHaptics,
+                                scope = scope,
+                            ),
+                        )
+                        pageContent(currentPage)
+                    }
                 }
 
                 incoming?.let { next ->
@@ -211,7 +200,12 @@ fun KeysCardStack(
                         modifier = Modifier
                             .testTag("keys-card-incoming")
                             .graphicsLayer { translationX = slide + direction * (widthPx + gap) },
-                    ) { pageContent(next) }
+                    ) {
+                        Column(Modifier.fillMaxWidth()) {
+                            CardHandle(active = false)
+                            pageContent(next)
+                        }
+                    }
                 }
             }
         }
@@ -223,7 +217,7 @@ fun KeysCardStack(
 private fun CardFace(
     grabbed: Boolean,
     modifier: Modifier = Modifier,
-    content: @Composable BoxScope.() -> Unit,
+    content: @Composable () -> Unit,
 ) {
     Box(
         modifier
@@ -235,11 +229,12 @@ private fun CardFace(
                 surface = ScribeTokens.s0,
             )
             .border(
-                // The edge lights up when the whole card has been taken hold of. That is the
-                // difference between having a key and having the card, and it has to be
-                // visible from under a thumb.
+                // The edge lifts when the card has been taken hold of. It was the accent
+                // teal, which shouted — the accent means "this is recording" or "this is
+                // the answer", and spending it on a drag devalues it everywhere else. A
+                // brighter version of the card's own hairline says the same thing quietly.
                 if (grabbed) 1.5.dp else 1.dp,
-                if (grabbed) ScribeTokens.accent.copy(alpha = 0.55f) else ScribeTokens.stroke,
+                if (grabbed) ScribeTokens.stroke2 else ScribeTokens.stroke,
                 RoundedCornerShape(ScribeTokens.radius),
             ),
     ) {
@@ -274,7 +269,6 @@ private fun Modifier.cardGestures(
     onPage: (KeyboardPage) -> Unit,
     onOpenChange: (Boolean) -> Unit,
     onDragClaimed: () -> Unit,
-    haptics: () -> Unit,
     grabHaptics: () -> Unit,
     scope: CoroutineScope,
 ): Modifier = this.pointerInput(Unit) {

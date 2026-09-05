@@ -655,3 +655,59 @@ cannot fire from a key at all.
       look crowded?
 - [ ] On a wide screen, **only the letters split**. The number row and the symbols page
       should stay whole.
+
+---
+
+# v0.14.0 — one handle, and the screen edge coming inward
+
+## 1 · Where autocorrect is
+
+It was there all along, six cards down the page. It is now the **second** card, directly
+under "Ways to use Scribe", and the section is labelled **TYPING · AUTOCORRECT** rather
+than "typing help".
+
+- [ ] Open Scribe. Second card down: KEYBOARD, then TYPING · AUTOCORRECT under it.
+- [ ] Four switches: Capitals, Smart punctuation, Suggestions, Autocorrect. The last two
+      are off until you turn them on.
+
+## 2 · The dot handle
+
+Everything that used to be an edge gesture is now this one strip.
+
+- [ ] There is a field of small embossed dots at the top of the card, brightest and largest
+      in the middle, dissolving to nothing well before the sides.
+- [ ] It is shorter than half a key.
+- [ ] **Drag it left or right**: the card pages. **Drag it down**: the card lies flat.
+- [ ] Touching it brightens the dots and gives the heavy grab buzz.
+- [ ] The divots on the left, right and bottom edges are gone. Nothing else on the card
+      moves it — type as fast as you like and it should never budge.
+- [ ] Is the handle big enough to hit? It is 20 dp tall and full width.
+
+## 3 · The bottom edge no longer catches your thumb
+
+- [ ] Press near the space bar, at the very bottom of the card. Nothing should try to drag
+      the keyboard down any more.
+
+## 4 · The screen edge
+
+- [ ] The top corners of the keyboard's black ground now curve **inward** — the black stays
+      full height at the far left and right and sweeps down into the flat top edge, so it
+      reads as the display's own edge coming in rather than a card lying on the app.
+- [ ] Is the radius right? It matches the card's.
+
+## 5 · Smaller things
+
+- [ ] Settings → Keyboards: title **Scribe**, subtitle **Voice-to-text keyboard**. (Say if
+      you want the word "Scribe" in the subtitle too.)
+- [ ] The number row splits again with the letters on a wide screen. The symbols page still
+      does not.
+- [ ] Grabbing the card lifts its border to a brighter hairline rather than teal — the
+      accent is reserved for recording and for the chosen suggestion.
+
+## 6 · Emoji
+
+- [ ] The keys are narrower — nine per row instead of seven.
+- [ ] **A quick brush across the grid should insert nothing.** An emoji needs a short,
+      deliberate press before it lands.
+- [ ] A normal press should still feel immediate. If it swallows real taps, the threshold
+      is 110 ms and is one number.

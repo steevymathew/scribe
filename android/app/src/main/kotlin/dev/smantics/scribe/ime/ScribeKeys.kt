@@ -3,6 +3,8 @@ package dev.smantics.scribe.ime
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Canvas
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -82,8 +84,14 @@ object KeyMetrics {
     val rowGap = 6.dp
     const val CONTENT_ROWS = 4
 
+    /**
+     * The dot field at the top of the card, which is the only part of it that can be
+     * dragged. Under half a key: findable, and never mistaken for a row.
+     */
+    val handleHeight = 20.dp
+
     /** The keys, all rows, without the card's own padding. */
-    val keysHeight: Dp = rowHeight * (CONTENT_ROWS + 1) + rowGap * CONTENT_ROWS
+    val keysHeight: Dp = rowHeight * (CONTENT_ROWS + 1) + rowGap * CONTENT_ROWS + handleHeight
 
     /** The four rows above the bottom row — what the emoji grid has to fill. */
     val contentHeight: Dp = rowHeight * CONTENT_ROWS + rowGap * (CONTENT_ROWS - 1)
@@ -96,6 +104,7 @@ object KeyMetrics {
 
     /** The card seen edge-on, when it is lying face down. */
     val edgeHeight = 14.dp
+
 }
 
 /**
@@ -184,79 +193,90 @@ fun KeyboardPageContent(
 }
 
 /**
- * The grip on the side of the card: a divot you can get a thumb into.
+ * The one thing on the card you can take hold of: a field of embossed dots.
  *
- * This band is the only part of the card with no keys in it, and since the last round it is
- * the **only** place the card can be dragged from — a gesture that could start anywhere was
- * firing while people typed. A band that does something and looks like nothing is worse than
- * no band, so it is drawn as a depression: the one shape on this keyboard that means *press
- * here*, in a place where nothing else does.
+ * **It replaced divots cut into the left, right and bottom edges**, which did the job and
+ * looked wrong doing it — three notches taken out of a clean slab, and the bottom one sat
+ * close enough to the space bar to be caught by a thumb aiming at it. One handle, in the
+ * middle at the top, is both tidier and easier to explain: this is the part of the keyboard
+ * that is not a key, and it moves the whole card.
  *
- * It brightens under the touch, before anything moves, which is the acknowledgement Material
- * asks for and the thing that tells you the card is yours.
+ * The dots are drawn rather than laid out. Sizes and brightness both fall away toward the
+ * edges — the field is densest and lightest in the middle and dissolves into the card long
+ * before it reaches the sides — so it reads as a texture on the surface rather than as a
+ * component with a boundary. Each dot is a pale disc with a darker one just beneath it,
+ * which is the whole of "embossed" at this size, lit from the same top-left the keys are.
+ *
+ * Deliberately shorter than half a key: findable, and never mistaken for a row.
  */
 @Composable
-fun EdgeGrip(
-    page: KeyboardPage,
-    toLeft: Boolean,
-    active: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val target = (if (toLeft) page.left() else page.right()) ?: return
-    val tint by animateColorAsState(
-        if (active) ScribeTokens.accent else ScribeTokens.faint.copy(alpha = 0.45f),
-        label = "grip-tint",
-    )
+fun CardHandle(active: Boolean, modifier: Modifier = Modifier) {
+    val glow by animateFloatAsState(if (active) 1f else 0f, label = "handle-glow")
     Box(
         modifier
-            .testTag(if (toLeft) "grip-left" else "grip-right")
-            .padding(horizontal = 1.dp)
-            .size(width = GRIP_THICKNESS, height = GRIP_LENGTH)
-            .neuInset(RoundedCornerShape(GRIP_THICKNESS / 2), depth = if (active) 1.1f else 0.6f)
-            .semantics {
-                contentDescription = when (target) {
-                    KeyboardPage.EMOJI -> "Drag for emoji"
-                    KeyboardPage.SYMBOLS -> "Drag for symbols"
-                    KeyboardPage.LETTERS -> "Drag for letters"
+            .testTag("card-handle")
+            .fillMaxWidth()
+            .height(KeyMetrics.handleHeight)
+            .semantics { contentDescription = "Drag to move the keyboard" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.fillMaxWidth().height(KeyMetrics.handleHeight)) {
+            val spacing = HANDLE_DOT_SPACING.toPx()
+            val rows = HANDLE_ROWS
+            val columns = (size.width / spacing).toInt().coerceAtLeast(1)
+            val left = (size.width - (columns - 1) * spacing) / 2f
+            val top = (size.height - (rows - 1) * spacing) / 2f
+            val centre = size.width / 2f
+            val maxRadius = HANDLE_DOT_RADIUS.toPx()
+
+            for (row in 0 until rows) {
+                for (column in 0 until columns) {
+                    val x = left + column * spacing
+                    val y = top + row * spacing
+
+                    // Squared falloff from the middle: gentle across the centre, then away
+                    // to nothing well before the edge, so the field has no visible end.
+                    val distance = (abs(x - centre) / centre).coerceIn(0f, 1f)
+                    val falloff = (1f - distance).let { it * it }
+                    if (falloff <= 0.02f) continue
+
+                    // Stable pseudo-random variation, so the field looks scattered rather
+                    // than printed and looks the same every time it is drawn.
+                    val jitter = 0.35f + 0.65f * hash(row, column)
+                    val radius = maxRadius * jitter * falloff
+                    if (radius < 0.3f) continue
+
+                    val lift = (0.10f + 0.30f * jitter * falloff) * (1f + glow)
+                    drawCircle(
+                        color = Color.Black.copy(alpha = 0.5f * falloff),
+                        radius = radius,
+                        center = Offset(x, y + radius * 0.55f),
+                    )
+                    drawCircle(
+                        color = Color.White.copy(
+                            alpha = lift.coerceAtMost(if (active) 0.9f else 0.6f),
+                        ),
+                        radius = radius,
+                        center = Offset(x, y),
+                    )
                 }
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Glyph(
-            if (toLeft) GlyphName.CHEVRON_LEFT else GlyphName.CHEVRON_RIGHT,
-            tint,
-            size = 9.dp,
-            thickness = 1.3.dp,
-        )
+            }
+        }
     }
 }
 
-/** The same divot along the bottom, which is the edge the card is pushed down by. */
-@Composable
-fun BottomGrip(active: Boolean, modifier: Modifier = Modifier) {
-    val tint by animateColorAsState(
-        if (active) ScribeTokens.accent else ScribeTokens.faint.copy(alpha = 0.35f),
-        label = "bottom-grip-tint",
-    )
-    Box(
-        modifier
-            .testTag("grip-bottom")
-            .padding(bottom = 1.dp)
-            .size(width = GRIP_LENGTH * 1.6f, height = GRIP_THICKNESS)
-            .neuInset(RoundedCornerShape(GRIP_THICKNESS / 2), depth = if (active) 1.1f else 0.6f),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            Modifier
-                .size(width = 26.dp, height = 1.5.dp)
-                .background(tint, RoundedCornerShape(1.dp)),
-        )
-    }
+/** Deterministic scatter in 0..1, so the field never shimmers between frames. */
+private fun hash(row: Int, column: Int): Float {
+    var h = row * 73_856_093 xor column * 19_349_663
+    h = h xor (h ushr 13)
+    h *= 1_274_126_177
+    h = h xor (h ushr 16)
+    return (h and 0xFFFF) / 65_535f
 }
 
-/** Thin enough to be furniture, long enough to aim at. */
-private val GRIP_THICKNESS = 11.dp
-private val GRIP_LENGTH = 40.dp
+private val HANDLE_DOT_SPACING = 8.dp
+private val HANDLE_DOT_RADIUS = 2.1.dp
+private const val HANDLE_ROWS = 3
 
 /**
  * The card seen edge-on, which is all that is left when the keys are laid face down.
@@ -817,10 +837,21 @@ private fun EmojiKey(glyph: String, modifier: Modifier, onClick: () -> Unit) {
             .pointerInput(glyph) {
                 detectTapGestures(
                     onPress = {
+                        // **An emoji has to be meant.** They used to go in on touch-down
+                        // like a letter, so a thumb brushing across the grid left a trail of
+                        // faces behind it. Nobody types emoji in a hurry — they are chosen —
+                        // so the press has to last a moment before it counts. A brush is
+                        // shorter than that and does nothing; a deliberate press commits
+                        // while the finger is still down, so the emoji arrives under it
+                        // rather than when it lifts.
                         pressed = true
                         haptics()
-                        onClick()
-                        tryAwaitRelease()
+                        val releasedEarly =
+                            withTimeoutOrNull(EMOJI_COMMIT_MS) { tryAwaitRelease() } != null
+                        if (!releasedEarly) {
+                            onClick()
+                            tryAwaitRelease()
+                        }
                         pressed = false
                     },
                 )
@@ -831,7 +862,16 @@ private fun EmojiKey(glyph: String, modifier: Modifier, onClick: () -> Unit) {
     }
 }
 
-private const val EMOJI_PER_ROW = 7
+private const val EMOJI_PER_ROW = 9
+
+/**
+ * How long an emoji has to be held before it counts.
+ *
+ * Short enough that a deliberate tap feels immediate, long enough that a thumb travelling
+ * across the grid leaves nothing behind. If it turns out to swallow real taps, this is the
+ * number to lower.
+ */
+private const val EMOJI_COMMIT_MS = 110L
 
 /**
  * How far a finger travels before it counts as a swipe rather than a wobble.

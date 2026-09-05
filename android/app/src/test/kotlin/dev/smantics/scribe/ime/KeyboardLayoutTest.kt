@@ -110,14 +110,14 @@ class KeyboardLayoutTest {
     // ---------------------------------------------------------------- splitting
 
     /**
-     * Only the letters split. A number row cut in two puts `5` and `6` a hand apart for no
-     * reason — the stagger exists so each *hand* keeps its own half of the alphabet.
+     * The whole letters card splits, digits included — it is one card and it looked wrong
+     * with a full-width number row sitting above two split halves. The symbols page does
+     * not, and the bottom row never does: the space bar cannot be in two places.
      */
-    @Test fun `only the letter rows split`() {
-        KeyboardLayout.letterRows.forEach {
+    @Test fun `the letters card splits, and nothing else does`() {
+        (KeyboardLayout.letterRows + listOf(KeyboardLayout.numberRow)).forEach {
             assertTrue(KeyboardLayout.splittable(KeyboardPage.LETTERS, it))
         }
-        assertFalse(KeyboardLayout.splittable(KeyboardPage.LETTERS, KeyboardLayout.numberRow))
         assertFalse(KeyboardLayout.splittable(KeyboardPage.LETTERS, KeyboardLayout.bottomRow))
         KeyboardLayout.symbolRows.forEach {
             assertFalse(KeyboardLayout.splittable(KeyboardPage.SYMBOLS, it))

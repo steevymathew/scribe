@@ -126,9 +126,12 @@ fun HomeScreen(
                 onOpenKeyboardSettings = onOpenKeyboardSettings,
                 onOpenAccessibility = onOpenAccessibility,
             )
-            ModeCard(config) { engine.toggleMode() }
+            // The keyboard's own settings sit directly under the card that turns the
+            // keyboard on, because that is where somebody who just enabled it is looking.
+            // They were six cards down the page and the owner could not find autocorrect.
             KeyboardCard(config) { update -> scope.launch { engine.settings.update(update) } }
             TypingCard(config) { update -> scope.launch { engine.settings.update(update) } }
+            ModeCard(config) { engine.toggleMode() }
             SpeedAdviceCard(engine, config, onOpenModels)
         }
     }
@@ -547,7 +550,7 @@ private fun KeyboardCard(config: ScribeConfig, onUpdate: ((ScribeConfig) -> Scri
 @Composable
 private fun TypingCard(config: ScribeConfig, onUpdate: ((ScribeConfig) -> ScribeConfig) -> Unit) {
     ScribeCard(testTag = "typing-card") {
-        SectionLabel("TYPING HELP")
+        SectionLabel("TYPING · AUTOCORRECT")
         Text(
             "All of this runs on your phone, from a word list inside the app and the words " +
                 "you add yourself. Nothing you type is uploaded, and nothing is remembered " +

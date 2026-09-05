@@ -50,6 +50,7 @@ import dev.smantics.scribe.dictation.EngineState
 import dev.smantics.scribe.ui.components.Glyph
 import dev.smantics.scribe.ui.components.GlyphName
 import dev.smantics.scribe.ui.components.ModeToggle
+import dev.smantics.scribe.ui.components.CoveTopShape
 import dev.smantics.scribe.ui.components.ScribeMark
 import dev.smantics.scribe.ui.components.TranscriptReveal
 import dev.smantics.scribe.ui.components.Waveform
@@ -153,11 +154,11 @@ fun ScribePanel(
         Alignment.CenterEnd
     }
 
-    // **The panel's own top corners are rounded, and the rest of it is transparent.** That
-    // is what makes the black behind the keys read as part of the device rather than as a
-    // rectangle pasted over the app: the wallpaper shows through at the shoulders, and the
-    // ground curves up into the screen with the same radius as the card sitting on it.
-    // Anything that arrives from off-screen has to have an edge, and this is that edge.
+    // **The top corners curve inward, not outward.** A rounded corner would round the black
+    // *off* and make the keyboard a card lying on the app; inverting it does the opposite —
+    // the ground stays full height at the far left and right and sweeps down into the flat
+    // top edge, so what you see is the screen's own edge coming in and the keys sitting in
+    // the cove it makes. See CoveTopShape.
     Box(
         modifier
             .fillMaxWidth()
@@ -169,13 +170,7 @@ fun ScribePanel(
             // same to the eye and introduces a layer that rejects pointer input outside its
             // bounds — which cost an afternoon and eight failing tests. Nothing here
             // overflows the corners anyway: the card is inset from every edge.
-            .background(
-                color = ScribeTokens.bg,
-                shape = RoundedCornerShape(
-                    topStart = ScribeTokens.radius,
-                    topEnd = ScribeTokens.radius,
-                ),
-            ),
+            .background(color = ScribeTokens.bg, shape = CoveTopShape(ScribeTokens.radius)),
         contentAlignment = alignment,
     ) {
         Column(
