@@ -8,6 +8,43 @@ A dated record of what changed and when. Newest first. Times are local
 The Android port has its own docs (`android/README.md`, `android/docs/`); this section
 records what shipped and when, so the history is legible from the root of the project.
 
+### 2026-09-04 — v0.10.0: the keyboard rebuilt, and a notification that stays
+
+- **The bubble's notification is permanent and resists dismissal.** It used to be posted
+  only *after* the bubble was closed — the moment the user is least likely to be reading
+  notifications — and swiping it away stranded them with no route back short of the
+  accessibility settings. It is now posted when the service connects, re-words itself
+  depending on whether the bubble is on screen, and puts itself back via a delete intent if
+  it is swiped away. `setOngoing` alone stopped being enough at Android 14. It belongs to
+  the bubble alone and goes for good when the service is switched off.
+- **New keyboard layout**, from the owner's two screenshots: a number row across the top, a
+  symbol on the shoulder of every letter reached by holding it, and `?123 | , | ☺ | space |
+  . | ⏎` along the bottom. Holding the comma opens Scribe, which is Android's own
+  convention for a keyboard's settings key.
+- **The split repeats the middle key on both halves** — `asdfg`/`ghjkl`, `zxcv`/`vbnm` —
+  so neither thumb reaches across an eight-inch display for two of the commonest letters in
+  English. Shift and backspace hang off the outside edges.
+- **Keys are pressed in when touched.** The whole argument for the neumorphic style on a
+  keyboard, and it was missing: every key was drawn raised and stayed raised, so the only
+  confirmation of a tap was the haptic and a character appearing elsewhere. The light flips
+  on touch-down, on the same frame as the vibration.
+- **The utility bar is gone, replaced by gestures.** Swipe down to put the keys away and up
+  on the grabber to get them back; swipe left and right for the emoji and symbol pages.
+  Faint chevrons on the card's edges and an outline around it are what make that findable.
+  Width and split moved to a KEYBOARD card in Settings — decisions taken once for a device,
+  which do not need permanent keys on a surface that covers what the user is writing.
+- **No switch-to-another-keyboard key.** Android's own picker does that; a second one on
+  the primary keyboard is an invitation to leave. `Key.SwitchIme` was deleted rather than
+  left unused, so the type system enforces it.
+- The keys' up/down state is remembered across appearances; **the page never is** — the
+  keyboard always opens on the letters.
+- A stale-lambda bug the new tests caught: `pointerInput` keyed on a `data object` key
+  captured the first composition's handler, so `?123` switched to symbols and then the same
+  key on the symbols page switched to symbols again. Handlers now read through
+  `rememberUpdatedState`.
+- 242 tests, all green. `android/docs/OWNER-VERIFY.md` v0.10.0 — §4 asks whether the swipe
+  threshold is right, which is the number most likely to need tuning on a real thumb.
+
 ### 2026-09-04 — v0.9.0: the audio that went missing, and the wait that was never explained
 
 - **Long dictations lost their ending, and it was three faults at once.** The clip was cut

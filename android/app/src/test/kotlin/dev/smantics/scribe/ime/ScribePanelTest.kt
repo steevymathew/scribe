@@ -3,6 +3,7 @@ package dev.smantics.scribe.ime
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -65,9 +66,15 @@ class ScribePanelTest {
         override fun openApp() { calls += "openApp" }
     }
 
-    /** Opens the letters, which the panel keeps away by default now that voice is primary. */
+    /**
+     * Opens the letters.
+     *
+     * There is no "show the letters" key any more — the grabber left behind when they are
+     * swiped away answers a tap as well as a swipe, because a hint that only responds to
+     * the gesture you have not learned yet is not a hint.
+     */
     private fun showKeys() {
-        compose.onNodeWithTag("util-Show the letters").performClick()
+        compose.onNodeWithTag("keys-grabber").performClick()
     }
 
     private fun panel(
@@ -99,15 +106,58 @@ class ScribePanelTest {
         compose.onNodeWithTag("mic-button").assertIsDisplayed()
         compose.onNodeWithTag("mode-toggle").assertIsDisplayed()
         compose.onNodeWithTag("key-q").assertDoesNotExist()
-        compose.onNodeWithTag("util-Show the letters").assertIsDisplayed()
+        compose.onNodeWithTag("keys-grabber").assertIsDisplayed()
     }
 
     @Test fun `the letters can be summoned and put away`() {
         panel()
         showKeys()
         compose.onNodeWithTag("key-q").assertIsDisplayed()
-        compose.onNodeWithTag("util-Hide the letters").performClick()
+        compose.onNodeWithTag("keys-grabber").assertDoesNotExist()
+    }
+
+    /** The number row is part of the letters page, not a trip through `?123`. */
+    @Test fun `the digits are on the letters page`() {
+        panel()
+        showKeys()
+        compose.onNodeWithTag("key-1").assertIsDisplayed()
+        compose.onNodeWithTag("key-0").assertIsDisplayed()
+    }
+
+    /** The gestures need somewhere to be discovered from. */
+    @Test fun `the pages hint at each other`() {
+        panel()
+        showKeys()
+        compose.onNodeWithContentDescription("Swipe for emoji").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Swipe for symbols").assertIsDisplayed()
+    }
+
+    /** The emoji page is reachable without knowing the gesture. */
+    @Test fun `the emoji key opens the emoji page`() {
+        panel()
+        showKeys()
+        compose.onNodeWithTag("key-Emoji").performClick()
+        compose.onNodeWithTag("emoji-page").assertIsDisplayed()
         compose.onNodeWithTag("key-q").assertDoesNotExist()
+    }
+
+    /**
+     * Nothing on the primary keyboard offers to leave it. Android's own picker does that,
+     * and a key for it here is an invitation to tap away from the keyboard just chosen.
+     */
+    @Test fun `there is no switch-keyboard key`() {
+        panel()
+        showKeys()
+        compose.onNodeWithTag("util-Switch to another keyboard").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Switch keyboard").assertDoesNotExist()
+    }
+
+    /** Width and split moved to Settings; neither has a permanent key any more. */
+    @Test fun `there are no layout keys on the keyboard`() {
+        panel()
+        showKeys()
+        compose.onNodeWithTag("util-Full width").assertDoesNotExist()
+        compose.onNodeWithTag("util-Split the keyboard").assertDoesNotExist()
     }
 
     /**
@@ -206,7 +256,7 @@ class ScribePanelTest {
             actions,
         )
         compose.onNodeWithTag("permission-row").assertIsDisplayed()
-        compose.onNodeWithTag("open-scribe").performClick()
+        compose.onNodeWithTag("open-scribe-permission").performClick()
         assertEquals(listOf("openApp"), actions.calls)
     }
 
@@ -231,19 +281,28 @@ class ScribePanelTest {
         )
         showKeys()
         compose.onNodeWithTag("key-q").assertIsDisplayed()
-        compose.onNodeWithTag("util-Switch to another keyboard").assertIsDisplayed()
+        compose.onNodeWithTag("key-Backspace").assertIsDisplayed()
     }
 
     // --------------------------------------------------------------- the keys
 
     /** The utility bar is always there, whether or not the letters are showing. */
-    @Test fun `the utility bar routes to its actions with the letters away`() {
+    /** Backspace and enter live on the keys, where every keyboard puts them. */
+    @Test fun `backspace and enter are on the key rows`() {
         val actions = RecordingActions()
         panel(actions = actions)
-        compose.onNodeWithTag("util-Backspace").performClick()
-        compose.onNodeWithTag("util-Enter").performClick()
-        compose.onNodeWithTag("util-Switch to another keyboard").performClick()
-        assertEquals(listOf("backspace", "enter", "switch"), actions.calls)
+        showKeys()
+        compose.onNodeWithTag("key-Backspace").performClick()
+        compose.onNodeWithTag("key-Enter").performClick()
+        assertEquals(listOf("backspace", "enter"), actions.calls)
+    }
+
+    /** The one way into the app that is always on screen, keys up or down. */
+    @Test fun `the panel always offers a way into Scribe`() {
+        val actions = RecordingActions()
+        panel(actions = actions)
+        compose.onNodeWithTag("open-scribe").performClick()
+        assertEquals(listOf("openApp"), actions.calls)
     }
 
     /** Dictation is a toggle now: one tap on, one tap off, no holding. */
@@ -425,8 +484,14 @@ class ScribePanelTest {
             "Backspace",
             "Space",
             "Enter",
-            "Hide the letters",
-            "Switch to another keyboard",
+            "Emoji",
+            "Symbols",
+            "Shift",
+            "Open Scribe",
+            // The gestures are the only way to reach two of the three pages without a
+            // key, so the hints that advertise them have to be readable too.
+            "Swipe for emoji",
+            "Swipe for symbols",
         ).forEach { label ->
             val nodes = compose.onAllNodesWithContentDescription(label).fetchSemanticsNodes()
             assertTrue("no node described as \"$label\"", nodes.isNotEmpty())

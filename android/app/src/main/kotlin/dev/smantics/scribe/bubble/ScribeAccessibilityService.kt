@@ -101,7 +101,10 @@ class ScribeAccessibilityService : AccessibilityService() {
         ContextCompat.registerReceiver(
             this,
             summonReceiver,
-            IntentFilter(ACTION_SUMMON),
+            IntentFilter().apply {
+                addAction(ACTION_SUMMON)
+                addAction(ACTION_NOTIFICATION_DISMISSED)
+            },
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         // An accessibility overlay keeps drawing when the screen turns off, which puts the
@@ -119,6 +122,9 @@ class ScribeAccessibilityService : AccessibilityService() {
         // Up straight away, rather than waiting to detect a text field that may never be
         // reported. The user turned this on; showing it is the whole agreement.
         showOverlay()
+        // And the way back to it, from the moment the service starts rather than from the
+        // moment the bubble is closed. See postSummonNotification.
+        postSummonNotification()
         Log.i(TAG, "connected")
     }
 
@@ -414,23 +420,34 @@ class ScribeAccessibilityService : AccessibilityService() {
         runCatching { windowManager?.removeView(view) }
     }
 
-    /** Put the bubble away until the user taps a different text field. */
+    /** Put the bubble away until the user asks for it back. */
     private fun dismiss() {
         dismissedUntilNextField = true
         dismissedByUser = true
         hideDismissTarget()
         hideOverlay()
-        showSummonNotification()
+        postSummonNotification()
     }
 
     /**
-     * The way back, once the bubble has been closed.
+     * The way back to the bubble, and the only one that always works.
      *
-     * A persistent, silent notification with one action. This is the "hard-coded button"
-     * the bubble needed: it does not depend on detecting anything, it is in the same place
-     * every time, and it works from any screen.
+     * **It is posted for as long as the bubble service is running, not only after the
+     * bubble has been closed.** That was the old behaviour and it was a trap: the
+     * notification appeared at the moment the user made the bubble disappear, which is the
+     * moment they are least likely to be reading notifications, and if it was ever swiped
+     * away there was no route back short of the accessibility settings. A way back that
+     * only exists after you need it is not a way back.
+     *
+     * **It also resists being dismissed.** `setOngoing` alone stopped being enough at
+     * Android 14, which lets users swipe ongoing notifications away — so a delete intent
+     * puts it straight back while the service is alive. That is deliberate and it is the
+     * bargain the feature makes: turning the bubble on gives Scribe an accessibility
+     * service, and this notification is the visible, always-present handle on it. It goes
+     * away for good when the service is switched off, which is where it should be switched
+     * off from.
      */
-    private fun showSummonNotification() {
+    private fun postSummonNotification() {
         val manager = getSystemService(NotificationManager::class.java) ?: return
         if (manager.getNotificationChannel(SUMMON_CHANNEL) == null) {
             manager.createNotificationChannel(
@@ -447,32 +464,48 @@ class ScribeAccessibilityService : AccessibilityService() {
             Intent(ACTION_SUMMON).setPackage(packageName),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val notification = NotificationCompat.Builder(this, SUMMON_CHANNEL)
+        val reinstate = PendingIntent.getBroadcast(
+            this,
+            1,
+            Intent(ACTION_NOTIFICATION_DISMISSED).setPackage(packageName),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val showing = overlay != null
+        val builder = NotificationCompat.Builder(this, SUMMON_CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(getString(R.string.summon_title))
-            .setContentText(getString(R.string.summon_body))
+            .setContentText(
+                getString(
+                    if (showing) R.string.summon_body_showing else R.string.summon_body_hidden,
+                ),
+            )
             .setOngoing(true)
             .setSilent(true)
             .setContentIntent(summon)
-            .addAction(0, getString(R.string.summon_action), summon)
+            .setDeleteIntent(reinstate)
             .setPriority(NotificationCompat.PRIORITY_MIN)
-            .build()
-        runCatching { manager.notify(SUMMON_NOTIFICATION, notification) }
+        // No action while the bubble is already on screen: a button that does nothing
+        // visible is worse than no button.
+        if (!showing) builder.addAction(0, getString(R.string.summon_action), summon)
+        runCatching { manager.notify(SUMMON_NOTIFICATION, builder.build()) }
     }
 
-    /** Bring the bubble back and take the notification away. */
+    /** Bring the bubble back, and re-word the notification now that it is up. */
     private fun summon() {
         dismissedByUser = false
         dismissedUntilNextField = false
         showOverlay()
-        runCatching {
-            getSystemService(NotificationManager::class.java)?.cancel(SUMMON_NOTIFICATION)
-        }
+        postSummonNotification()
     }
 
     private val summonReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == ACTION_SUMMON) summon()
+            when (intent?.action) {
+                ACTION_SUMMON -> summon()
+                // Swiped away. Put it back: while the service is on, this is the route
+                // back to the bubble and losing it strands the user.
+                ACTION_NOTIFICATION_DISMISSED -> postSummonNotification()
+            }
         }
     }
 
@@ -810,6 +843,9 @@ class ScribeAccessibilityService : AccessibilityService() {
         private const val SUMMON_CHANNEL = "scribe-summon"
         private const val SUMMON_NOTIFICATION = 3
         const val ACTION_SUMMON = "dev.smantics.scribe.SUMMON_BUBBLE"
+
+        /** Fired by the system when the notification is swiped away, so it can go back. */
+        const val ACTION_NOTIFICATION_DISMISSED = "dev.smantics.scribe.SUMMON_DISMISSED"
 
         @Volatile private var instance: ScribeAccessibilityService? = null
 

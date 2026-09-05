@@ -51,7 +51,9 @@ import dev.smantics.scribe.core.model.ModelRegistry
 import dev.smantics.scribe.dictation.EngineState
 import dev.smantics.scribe.dictation.ScribeEngine
 import dev.smantics.scribe.model.ModelState
+import dev.smantics.scribe.settings.KeyboardWidth
 import dev.smantics.scribe.settings.ScribeConfig
+import dev.smantics.scribe.settings.SplitMode
 import dev.smantics.scribe.ui.components.Glyph
 import dev.smantics.scribe.ui.components.GlyphName
 import dev.smantics.scribe.ui.components.ModeToggle
@@ -60,6 +62,8 @@ import dev.smantics.scribe.ui.components.ScribeMark
 import dev.smantics.scribe.ui.components.ScribeCard
 import dev.smantics.scribe.ui.components.SecondaryButton
 import dev.smantics.scribe.ui.components.SectionLabel
+import dev.smantics.scribe.ui.components.neuActive
+import dev.smantics.scribe.ui.components.neuInset
 import dev.smantics.scribe.ui.components.Tag
 import dev.smantics.scribe.ui.components.ToggleRow
 import dev.smantics.scribe.ui.theme.Handedness
@@ -123,6 +127,7 @@ fun HomeScreen(
                 onOpenAccessibility = onOpenAccessibility,
             )
             ModeCard(config) { engine.toggleMode() }
+            KeyboardCard(config) { update -> scope.launch { engine.settings.update(update) } }
             SpeedAdviceCard(engine, config, onOpenModels)
         }
     }
@@ -487,6 +492,90 @@ private fun ModeCard(config: ScribeConfig, onToggle: () -> Unit) {
                 )
             }
             ModeToggle(config.mode, enabled = true, onToggle = onToggle)
+        }
+    }
+}
+
+/**
+ * The shape of the keyboard, decided here rather than on the keyboard.
+ *
+ * Both of these used to be keys — a control that cycled the width blindly through three
+ * values, and a toggle for the split — sitting permanently on a surface whose whole
+ * argument is that it covers what the user is writing. They are decisions taken once for
+ * a device, so they belong on a screen with room to say what they do, and the keyboard
+ * gets the space back.
+ */
+@Composable
+private fun KeyboardCard(config: ScribeConfig, onUpdate: ((ScribeConfig) -> ScribeConfig) -> Unit) {
+    ScribeCard(testTag = "keyboard-card") {
+        SectionLabel("KEYBOARD")
+        ChoiceRow(
+            title = "Split",
+            body = "Two halves, one under each thumb. Automatic splits on a screen wide " +
+                "enough to need it — an unfolded Fold, a tablet — and not otherwise.",
+            options = SplitMode.entries.map { it to it.label },
+            selected = config.keyboardSplit,
+            testTag = "split-mode",
+        ) { choice -> onUpdate { it.copy(keyboardSplit = choice) } }
+        ChoiceRow(
+            title = "Width",
+            body = "A narrower keyboard sits under one thumb and leaves more of the app " +
+                "visible above it.",
+            options = KeyboardWidth.entries.map { it to it.label },
+            selected = config.keyboardWidth,
+            testTag = "keyboard-width",
+        ) { choice -> onUpdate { it.copy(keyboardWidth = choice) } }
+    }
+}
+
+/** A titled row of mutually exclusive chips. */
+@Composable
+private fun <T> ChoiceRow(
+    title: String,
+    body: String,
+    options: List<Pair<T, String>>,
+    selected: T,
+    testTag: String,
+    onChoose: (T) -> Unit,
+) {
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(title, color = ScribeTokens.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Text(body, color = ScribeTokens.muted, fontSize = 12.sp)
+        Row(
+            Modifier.padding(top = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(ScribeTokens.gapSmall),
+        ) {
+            options.forEach { (value, label) ->
+                val chosen = value == selected
+                Box(
+                    Modifier
+                        .testTag("$testTag-$label")
+                        .then(
+                            if (chosen) {
+                                Modifier.neuActive(
+                                    RoundedCornerShape(ScribeTokens.radiusChip),
+                                    ScribeTokens.accent,
+                                )
+                            } else {
+                                Modifier.neuInset(
+                                    RoundedCornerShape(ScribeTokens.radiusChip),
+                                    depth = 0.7f,
+                                )
+                            },
+                        )
+                        .clickable { onChoose(value) }
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                ) {
+                    Text(
+                        label,
+                        color = if (chosen) ScribeTokens.accent else ScribeTokens.muted,
+                        fontSize = 12.sp,
+                    )
+                }
+            }
         }
     }
 }

@@ -373,3 +373,82 @@ real wait, and none of it was previously visible.
 
 - [ ] The bubble still types into the field, the circle still opens and closes the panel,
       cancel is still red, and the model setting still takes effect (v0.8.0).
+
+---
+
+# v0.10.0 — the keyboard rebuilt, and a notification that stays
+
+## 1 · The bubble's notification
+
+It used to appear only *after* the bubble was closed — the moment you are least likely to
+be reading notifications — and if it was ever swiped away there was no route back short of
+the accessibility settings. It is now posted from the moment the service starts, and it
+puts itself back if it is dismissed.
+
+- [ ] Turn the bubble on. A silent, low-priority "Scribe" notification should appear
+      immediately, saying the button is on screen.
+- [ ] Close the bubble with its X. The notification should change to "Tap to bring the
+      dictation button back" and gain a **Show button** action. Both the action and the
+      body should bring it back.
+- [ ] **Try to swipe the notification away.** It should come straight back.
+- [ ] Turn the accessibility service off. The notification should go for good.
+- [ ] Confirm it is only there for the bubble — using only the keyboard should leave you
+      with no permanent Scribe notification (the "Scribe is listening" one appears while
+      recording and goes when it stops; that is a different one and is required by Android).
+
+## 2 · The keyboard layout
+
+Built from your two screenshots.
+
+- [ ] Number row across the top, `1`–`0`.
+- [ ] Every letter shows a small symbol on its top-right shoulder — `q` has `-`, `a` has
+      `@`, `z` has `*`, and so on. **Hold a key** and you get the shoulder symbol instead
+      of the letter, with no stray letter typed alongside it.
+- [ ] Bottom row is `?123 | , | ☺ | space | . | ⏎`.
+- [ ] **Hold the comma** — it opens Scribe. (Android's own convention for a keyboard's
+      settings key.)
+- [ ] There is no key that switches to another keyboard, no width key, and no split key.
+- [ ] On the unfolded Fold, the split shows `asdfg` / `ghjkl` and `zxcv` / `vbnm` — **`g`
+      and `v` on both halves**, so neither thumb reaches across the hinge. Shift and
+      backspace sit on the outside edges.
+
+## 3 · The keys should feel pressed
+
+- [ ] Every key is raised at rest and **visibly sinks** when your finger is on it — the
+      highlight and shadow swap corners.
+- [ ] The sink and the vibration happen together, on touch-down, not on release.
+- [ ] Press a key and slide off it without lifting: it should un-press and type **nothing**.
+- [ ] This applies to every key, including space, shift, backspace, enter and the emoji.
+
+## 4 · The swipes
+
+- [ ] **Swipe down** anywhere on the keys — they go away and leave a thin grabber bar.
+- [ ] **Swipe up** on the grabber — they come back. Tapping it also works.
+- [ ] **Swipe right** — the symbols page. **Swipe left twice** from there — emoji.
+- [ ] Swiping past the ends does nothing (emoji ← letters → symbols is a run, not a loop).
+- [ ] Faint chevrons on the left and right edges of the card hint at the pages either side.
+- [ ] Is the swipe threshold right? It should be hard to trigger by accident while typing
+      and easy on purpose. **This is the number most likely to need tuning** — tell me if
+      it fires while you type or takes too much travel.
+- [ ] On the emoji page a vertical drag scrolls the emoji rather than hiding the keyboard.
+      Swiping right still leaves the page. Is that acceptable, or should the keyboard hide
+      from there too?
+
+## 5 · What is remembered
+
+- [ ] Hide the keys, close the keyboard, open it again — the keys should still be hidden.
+- [ ] Leave the keyboard on the **symbols or emoji** page, close it, open it again — it
+      should come back on the **letters**. The up/down state is sticky; the page is not.
+
+## 6 · Settings
+
+- [ ] Scribe → the **KEYBOARD** card has *Split* (Automatic / Never / Always) and *Width*
+      (Full / Slightly narrower / Compact).
+- [ ] Changing either takes effect on the keyboard without restarting anything.
+- [ ] Automatic should split on the unfolded Fold and not on the cover screen.
+
+## 7 · Nothing else moved
+
+- [ ] The bubble still types into fields, the mic still dictates from the strip, the
+      transcript still shows `LISTENING · 0:12` while you talk.
+- [ ] The Scribe mark at the left of the voice strip opens the app.

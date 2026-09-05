@@ -85,6 +85,25 @@ data class ScribeConfig(
      */
     val keyboardShown: Boolean = false,
     val handedness: Handedness = Handedness.RIGHT,
+
+    /**
+     * Whether the keys are drawn in two halves.
+     *
+     * A setting rather than a key on the keyboard. Splitting is a decision about *this
+     * device in this posture* — it is right on a Fold's inner display and absurd on a
+     * cover screen — and a decision made once does not need a permanent button on a
+     * surface that sits on top of what the user is writing. [SplitMode.AUTO] follows the
+     * screen width, which is the answer almost everybody wants.
+     */
+    val keyboardSplit: SplitMode = SplitMode.AUTO,
+
+    /**
+     * How much of the width the keyboard fills.
+     *
+     * Also a setting, for the same reason, and also because the control it replaced cycled
+     * blindly through three values with no way to see which one you were on.
+     */
+    val keyboardWidth: KeyboardWidth = KeyboardWidth.FULL,
     val bubbleEnabled: Boolean = false,
 
     // Onboarding
@@ -155,7 +174,24 @@ data class ScribeConfig(
 data class LayoutSnapshot(
     val keyboardShown: Boolean,
     val handedness: Handedness,
+    val split: SplitMode,
+    val width: KeyboardWidth,
 )
+
+/** Whether the keys are drawn in two halves. See [ScribeConfig.keyboardSplit]. */
+enum class SplitMode(val label: String) {
+    /** Split on a screen wide enough to need it, which is the Fold open and little else. */
+    AUTO("Automatic"),
+    NEVER("Never split"),
+    ALWAYS("Always split"),
+}
+
+/** How much of the width the keyboard fills. See [ScribeConfig.keyboardWidth]. */
+enum class KeyboardWidth(val fraction: Float, val label: String) {
+    FULL(1f, "Full width"),
+    WIDE(0.86f, "Slightly narrower"),
+    COMPACT(0.68f, "Compact"),
+}
 
 class SettingsRepository(private val context: Context) {
 
@@ -188,6 +224,12 @@ class SettingsRepository(private val context: Context) {
                 handedness = layoutMirror.getString(M_HANDEDNESS, null)
                     ?.let { runCatching { Handedness.valueOf(it) }.getOrNull() }
                     ?: defaults.handedness,
+                split = layoutMirror.getString(M_SPLIT, null)
+                    ?.let { runCatching { SplitMode.valueOf(it) }.getOrNull() }
+                    ?: defaults.keyboardSplit,
+                width = layoutMirror.getString(M_WIDTH, null)
+                    ?.let { runCatching { KeyboardWidth.valueOf(it) }.getOrNull() }
+                    ?: defaults.keyboardWidth,
             )
         }
 
@@ -197,6 +239,8 @@ class SettingsRepository(private val context: Context) {
             layoutMirror.edit()
                 .putBoolean(M_KEYS_SHOWN, next.keyboardShown)
                 .putString(M_HANDEDNESS, next.handedness.name)
+                .putString(M_SPLIT, next.keyboardSplit.name)
+                .putString(M_WIDTH, next.keyboardWidth.name)
                 .apply()
             prefs[K_MODEL] = next.model
             prefs[K_HEAVY_MODEL] = next.heavyModel
@@ -219,6 +263,8 @@ class SettingsRepository(private val context: Context) {
             prefs[K_SNIPPETS] = next.snippets.toJson()
             prefs[K_HISTORY] = next.historyEnabled
             prefs[K_KEYS_SHOWN] = next.keyboardShown
+            prefs[K_KB_SPLIT] = next.keyboardSplit.name
+            prefs[K_KB_WIDTH] = next.keyboardWidth.name
             prefs[K_HANDEDNESS] = next.handedness.name
             prefs[K_BUBBLE] = next.bubbleEnabled
             prefs[K_ONBOARDED] = next.onboardingComplete
@@ -253,6 +299,12 @@ class SettingsRepository(private val context: Context) {
             snippets = this[K_SNIPPETS]?.fromJson() ?: defaults.snippets,
             historyEnabled = this[K_HISTORY] ?: defaults.historyEnabled,
             keyboardShown = this[K_KEYS_SHOWN] ?: defaults.keyboardShown,
+            keyboardSplit = this[K_KB_SPLIT]?.let {
+                runCatching { SplitMode.valueOf(it) }.getOrNull()
+            } ?: defaults.keyboardSplit,
+            keyboardWidth = this[K_KB_WIDTH]?.let {
+                runCatching { KeyboardWidth.valueOf(it) }.getOrNull()
+            } ?: defaults.keyboardWidth,
             handedness = this[K_HANDEDNESS]?.let {
                 runCatching { Handedness.valueOf(it) }.getOrNull()
             } ?: defaults.handedness,
@@ -269,6 +321,8 @@ class SettingsRepository(private val context: Context) {
         const val LAYOUT_MIRROR = "scribe-layout"
         const val M_KEYS_SHOWN = "keyboard_shown"
         const val M_HANDEDNESS = "handedness"
+        const val M_SPLIT = "keyboard_split"
+        const val M_WIDTH = "keyboard_width"
 
         val K_MODEL = stringPreferencesKey("model")
         val K_HEAVY_MODEL = stringPreferencesKey("heavy_model")
@@ -291,6 +345,8 @@ class SettingsRepository(private val context: Context) {
         val K_SNIPPETS = stringPreferencesKey("snippets")
         val K_HISTORY = booleanPreferencesKey("history_enabled")
         val K_KEYS_SHOWN = booleanPreferencesKey("keyboard_shown")
+        val K_KB_SPLIT = stringPreferencesKey("keyboard_split")
+        val K_KB_WIDTH = stringPreferencesKey("keyboard_width")
         val K_HANDEDNESS = stringPreferencesKey("handedness")
         val K_BUBBLE = booleanPreferencesKey("bubble_enabled")
         val K_ONBOARDED = booleanPreferencesKey("onboarding_complete")

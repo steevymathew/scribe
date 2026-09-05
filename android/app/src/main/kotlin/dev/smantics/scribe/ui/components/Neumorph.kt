@@ -128,3 +128,38 @@ fun Modifier.neuActive(
             drawContent()
         }
     }
+
+/**
+ * A key, raised until it is touched and **pressed into the surface while it is**.
+ *
+ * This is the whole point of the style on a keyboard, and it was missing: every key was
+ * drawn raised and stayed raised, so the only confirmation a tap had registered was the
+ * haptic tick and the character appearing somewhere else on screen. A physical key
+ * *moves*. Here the light flips — the highlight that sat on the top-left edge goes to the
+ * bottom-right and the shadow crosses the other way — which is what the eye reads as the
+ * surface going down, and it lands on the same frame as the vibration.
+ *
+ * [pressed] is passed rather than read from an interaction source because the gesture that
+ * drives it also has to survive a drag: a finger that starts on a key and swipes the page
+ * away must un-press the key without typing it, and only the gesture detector knows that.
+ */
+fun Modifier.neuKey(
+    shape: Shape,
+    pressed: Boolean,
+    surface: Color = ScribeTokens.s2,
+    tint: Color? = null,
+): Modifier = when {
+    tint != null && !pressed -> neuActive(shape, tint)
+    tint != null -> neuActive(shape, tint, depth = PRESSED_DEPTH).clip(shape)
+    pressed -> neuInset(shape, surface, depth = PRESSED_DEPTH)
+    else -> neuRaised(shape, surface)
+}
+
+/**
+ * How far a pressed key sinks.
+ *
+ * Deeper than the resting inset used for wells and toggles. A key is being touched at the
+ * moment it is drawn, so the difference from its neighbours needs to be unmistakable at a
+ * glance taken with a fingertip covering it.
+ */
+private const val PRESSED_DEPTH = 1.15f

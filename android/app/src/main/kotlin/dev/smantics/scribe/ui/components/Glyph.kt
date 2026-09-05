@@ -41,6 +41,14 @@ enum class GlyphName {
 
     /** A grip, for dragging the panel around. */
     GRIP,
+
+    /** Bare chevrons, for the swipe hints on the edges of the keyboard's pages. */
+    CHEVRON_LEFT,
+    CHEVRON_RIGHT,
+    CHEVRON_UP,
+
+    /** A smiling face, for the key that opens the emoji page. */
+    EMOJI,
 }
 
 @Composable
@@ -55,6 +63,7 @@ fun Glyph(
         val unit = this.size.minDimension / 24f
         val stroke = Stroke(width = thickness.toPx(), cap = StrokeCap.Round)
         fun p(x: Float, y: Float) = Offset(x * unit, y * unit)
+        fun r(radius: Float) = radius * unit
 
         when (name) {
             GlyphName.MIC -> {
@@ -92,6 +101,32 @@ fun Glyph(
                 drawLine(color, p(21f, 13f), p(4f, 13f), stroke.width, StrokeCap.Round)
                 drawLine(color, p(10f, 7f), p(4f, 13f), stroke.width, StrokeCap.Round)
                 drawLine(color, p(10f, 19f), p(4f, 13f), stroke.width, StrokeCap.Round)
+            }
+
+            // Chevrons carry no shaft: they are hints on the edge of a card, and an arrow
+            // there reads as a button to press rather than a direction to swipe.
+            GlyphName.CHEVRON_LEFT -> {
+                drawLine(color, p(15f, 5f), p(8f, 12f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(15f, 19f), p(8f, 12f), stroke.width, StrokeCap.Round)
+            }
+
+            GlyphName.CHEVRON_RIGHT -> {
+                drawLine(color, p(9f, 5f), p(16f, 12f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(9f, 19f), p(16f, 12f), stroke.width, StrokeCap.Round)
+            }
+
+            GlyphName.CHEVRON_UP -> {
+                drawLine(color, p(5f, 15f), p(12f, 8f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(19f, 15f), p(12f, 8f), stroke.width, StrokeCap.Round)
+            }
+
+            GlyphName.EMOJI -> {
+                drawCircle(color, radius = r(8f), center = p(12f, 12f), style = stroke)
+                drawCircle(color, radius = r(1.1f), center = p(9f, 10f))
+                drawCircle(color, radius = r(1.1f), center = p(15f, 10f))
+                drawLine(color, p(8.5f, 14.5f), p(10.5f, 16.5f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(10.5f, 16.5f), p(13.5f, 16.5f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(13.5f, 16.5f), p(15.5f, 14.5f), stroke.width, StrokeCap.Round)
             }
 
             GlyphName.ARROW_LEFT -> {

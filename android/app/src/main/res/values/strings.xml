@@ -23,7 +23,8 @@
     <string name="a11y_summary">Show a dictation button on text fields</string>
 
     <string name="summon_channel">Scribe button</string>
-    <string name="summon_title">Scribe is ready</string>
-    <string name="summon_body">Tap to bring the dictation button back.</string>
+    <string name="summon_title">Scribe</string>
+    <string name="summon_body_showing">The dictation button is on screen.</string>
+    <string name="summon_body_hidden">Tap to bring the dictation button back.</string>
     <string name="summon_action">Show button</string>
 </resources>

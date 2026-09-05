@@ -16,6 +16,8 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import dev.smantics.scribe.dictation.ScribeEngine
 import dev.smantics.scribe.ui.MainActivity
+import dev.smantics.scribe.settings.KeyboardWidth
+import dev.smantics.scribe.settings.SplitMode
 import dev.smantics.scribe.ui.theme.Handedness
 import dev.smantics.scribe.ui.theme.ScribeTheme
 import kotlinx.coroutines.CoroutineScope
@@ -49,6 +51,8 @@ class ScribeInputMethodService : InputMethodService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val handedness = MutableStateFlow(Handedness.RIGHT)
     private val keysShown = MutableStateFlow(false)
+    private val splitMode = MutableStateFlow(SplitMode.AUTO)
+    private val keyboardWidth = MutableStateFlow(KeyboardWidth.FULL)
 
     private val sink = InputConnectionSink { currentInputConnection }
 
@@ -64,11 +68,15 @@ class ScribeInputMethodService : InputMethodService() {
         engine.settings.layoutSnapshot.let {
             handedness.value = it.handedness
             keysShown.value = it.keyboardShown
+            splitMode.value = it.split
+            keyboardWidth.value = it.width
         }
         scope.launch {
             engine.settings.config.collect {
                 handedness.value = it.handedness
                 keysShown.value = it.keyboardShown
+                splitMode.value = it.keyboardSplit
+                keyboardWidth.value = it.keyboardWidth
             }
         }
     }
@@ -100,6 +108,8 @@ class ScribeInputMethodService : InputMethodService() {
                     val state by engine.state.collectAsState()
                     val hand by handedness.collectAsState()
                     val keys by keysShown.collectAsState()
+                    val mode by splitMode.collectAsState()
+                    val width by keyboardWidth.collectAsState()
                     val wide = resources.configuration.screenWidthDp >= SPLIT_WIDTH_DP
                     ScribeTheme(handedness = hand) {
                         ScribePanel(
@@ -113,7 +123,12 @@ class ScribeInputMethodService : InputMethodService() {
                                     }
                                 }
                             },
-                            splitAvailable = wide,
+                            split = when (mode) {
+                                SplitMode.ALWAYS -> true
+                                SplitMode.NEVER -> false
+                                SplitMode.AUTO -> wide
+                            },
+                            widthFraction = width.fraction,
                         )
                     }
                 }
