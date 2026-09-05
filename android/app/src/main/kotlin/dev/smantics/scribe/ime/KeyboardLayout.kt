@@ -154,6 +154,26 @@ object KeyboardLayout {
         Key.Enter,
     )
 
+    /**
+     * The bottom row the emoji page needs, which is not the one the letters need.
+     *
+     * A comma and a full stop are no use while picking emoji, and the emoji key would send
+     * you to the page you are already on. **Backspace is what is actually wanted** — the
+     * one thing you reach for immediately after putting the wrong face in — so it takes the
+     * space the two punctuation keys were wasting, and the way back to the letters keeps
+     * its place at the left where it is on every other page.
+     */
+    val emojiBottomRow: List<Key> = listOf(
+        Key.Layer,
+        Key.Space,
+        Key.Backspace,
+        Key.Enter,
+    )
+
+    /** The bottom row for a page. */
+    fun bottomRowFor(page: KeyboardPage): List<Key> =
+        if (page == KeyboardPage.EMOJI) emojiBottomRow else bottomRow
+
     /** The letter or symbol rows for a page, without the number row or the bottom row. */
     fun rowsFor(page: KeyboardPage, shift: ShiftState): List<List<Key>> = when {
         page != KeyboardPage.SYMBOLS -> letterRows
@@ -174,7 +194,7 @@ object KeyboardLayout {
 
     /** The air at each end of [row], in key-widths, to keep every letter the same size. */
     fun indentFor(row: List<Key>): Float {
-        val used = row.sumOf { weightOf(it).toDouble() }.toFloat()
+        val used = weightsFor(row).sum()
         return ((ROW_UNITS - used) / 2f).coerceAtLeast(0f)
     }
 
@@ -194,6 +214,39 @@ object KeyboardLayout {
         is Key.Mic -> 1.5f
         else -> 1f
     }
+
+    /**
+     * The widths of one row, which always add up to [ROW_UNITS].
+     *
+     * The bottom rows are given explicitly rather than derived, because they are the one
+     * place where the keys are not interchangeable. **The space bar is the default action
+     * of that row** — it is where a thumb lands when it is not aiming at anything — so it
+     * takes most of a whole key from the three narrow keys crowding it. And the emoji page
+     * needs a different row again: a comma is no use while picking a face, and backspace is
+     * the first thing anybody reaches for after picking the wrong one.
+     */
+    fun weightsFor(row: List<Key>): List<Float> = when (row) {
+        bottomRow -> BOTTOM_WEIGHTS
+        emojiBottomRow -> EMOJI_BOTTOM_WEIGHTS
+        else -> row.map { weightOf(it) }
+    }
+
+    /** `?123 · , · emoji · space · . · enter` */
+    private val BOTTOM_WEIGHTS = listOf(1.3f, 0.9f, 0.9f, 4.7f, 0.9f, 1.3f)
+
+    /** `ABC · space · backspace · enter` */
+    private val EMOJI_BOTTOM_WEIGHTS = listOf(1.5f, 5.5f, 1.5f, 1.5f)
+
+    /**
+     * Whether a row is split down the middle on a wide screen.
+     *
+     * Only the letters. A number row split in two puts `5` and `6` a hand apart for no
+     * reason — the stagger exists so each *hand* keeps its own half of the alphabet, and
+     * digits and symbols are not typed in that two-thumbed way. The bottom row is never
+     * split either: the space bar is one key and cannot be in two places.
+     */
+    fun splittable(page: KeyboardPage, row: List<Key>): Boolean =
+        page == KeyboardPage.LETTERS && row.all { it is Key.Char && it.lower[0].isLetter() }
 
     /**
      * Split a row for a wide screen, **repeating the middle key on both halves**.

@@ -585,3 +585,73 @@ should stay empty unless you download a model.
 - [ ] Typing precision from v0.11.0 is unchanged — keys still commit on touch-down.
 - [ ] Starting a swipe from a letter still types it and then takes it back.
 - [ ] The keyboard's height still does not change between pages.
+
+---
+
+# v0.13.0 — the card only moves from its edges
+
+## 1 · The eagerness is gone
+
+A drag used to be recognised anywhere on the card, so a thumb travelling a few millimetres
+between keys started pushing the keyboard off screen — while typing, which is the worst
+possible moment. **The card can now only be dragged from its edge band**, which is the strip
+of padding between the frame and the first row of keys. There are no keys there, so it
+cannot fire from a key at all.
+
+- [ ] Type fast and sloppily for a while. **The card should never move.**
+- [ ] Drag from the left or right edge — the little divots — and it pages.
+- [ ] Drag from the bottom edge and it lies down.
+- [ ] Touching the band should light the divot and give the heavy grab buzz *before*
+      anything moves.
+- [ ] Is the band findable? It is 16 dp. Too narrow to hit, or so wide it catches the outer
+      keys? That is the number to tune.
+
+## 2 · The divots
+
+- [ ] There is a small depression on the left and right edges, with a chevron in it, and a
+      wider one along the bottom. They should read as "press here", not as decoration.
+- [ ] They light teal in the direction you are pulling.
+
+## 3 · Cards look separate now
+
+- [ ] Drag sideways slowly. There should be a **visible gap** between the card leaving and
+      the card arriving — two objects, not one long strip.
+- [ ] Is 14 dp the right gap?
+
+## 4 · The panel is part of the screen
+
+- [ ] The black behind the keys now has **rounded top corners** matching the card radius, so
+      the wallpaper shows at the shoulders and the keyboard reads as coming up out of the
+      bottom of the display.
+- [ ] It rises the last few pixels into place as it appears, on top of the system's own
+      slide. Too much, too little, or right?
+
+## 5 · The edge you pull up
+
+- [ ] With the keys down, what is left is a **slim lit line** with the card's own corner
+      radius — the card seen edge-on, catching the same light as the keys. Not a bar.
+- [ ] It is only there when the keys are down. With the keyboard up there should be no
+      stray line at the bottom.
+- [ ] Swipe up on it or tap it to bring the keys back.
+
+## 6 · The status line
+
+- [ ] "Ready" appears when the model loads and then **goes away**. "Inserted" appears after
+      a dictation and goes away. Neither should sit there.
+- [ ] Errors stay put — they are not tidied away.
+
+## 7 · Suggestions
+
+- [ ] Turn on Suggestions in Scribe → TYPING HELP. Type a few letters.
+- [ ] **The best guess is in the middle and is the bright one**; the alternatives sit either
+      side, dimmer. Tapping any of them replaces the word.
+
+## 8 · The bottom row and the emoji page
+
+- [ ] The space bar is noticeably wider; the keys either side of it are a little narrower.
+- [ ] On the **emoji page** the bottom row is `ABC · space · backspace · enter` — no comma,
+      no full stop, no emoji key. Backspace is what you actually need there.
+- [ ] The emoji grid has real gaps and keys the same height as the letters. Does it still
+      look crowded?
+- [ ] On a wide screen, **only the letters split**. The number row and the symbols page
+      should stay whole.

@@ -34,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -130,6 +131,16 @@ fun ScribePanel(
     // has lost its place. It always opens on the letters.
     var page by remember { mutableStateOf(KeyboardPage.LETTERS) }
     var shift by remember { mutableStateOf(ShiftState.OFF) }
+
+    // Rises the last little way into place rather than simply being there. The system
+    // already slides the input window up; this rides on top of it so the panel arrives as
+    // one object with the shoulders it just grew, instead of appearing fully formed at the
+    // end of somebody else's animation.
+    val entrance by animateFloatAsState(
+        targetValue = 1f,
+        animationSpec = tween(ENTRANCE_MS),
+        label = "panel-entrance",
+    )
     // Shared with the card: a key commits on touch-down, and if the gesture turns out to be
     // a drag of the card the key takes its character back.
     val arbiter = remember { SwipeArbiter() }
@@ -142,7 +153,31 @@ fun ScribePanel(
         Alignment.CenterEnd
     }
 
-    Box(modifier.fillMaxWidth().background(ScribeTokens.bg), contentAlignment = alignment) {
+    // **The panel's own top corners are rounded, and the rest of it is transparent.** That
+    // is what makes the black behind the keys read as part of the device rather than as a
+    // rectangle pasted over the app: the wallpaper shows through at the shoulders, and the
+    // ground curves up into the screen with the same radius as the card sitting on it.
+    // Anything that arrives from off-screen has to have an edge, and this is that edge.
+    Box(
+        modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                translationY = (1f - entrance) * ENTRANCE_TRAVEL_PX
+                alpha = entrance
+            }
+            // Painted to the shape rather than clipped to it. `Modifier.clip` would do the
+            // same to the eye and introduces a layer that rejects pointer input outside its
+            // bounds — which cost an afternoon and eight failing tests. Nothing here
+            // overflows the corners anyway: the card is inset from every edge.
+            .background(
+                color = ScribeTokens.bg,
+                shape = RoundedCornerShape(
+                    topStart = ScribeTokens.radius,
+                    topEnd = ScribeTokens.radius,
+                ),
+            ),
+        contentAlignment = alignment,
+    ) {
         Column(
             Modifier
                 .fillMaxWidth(widthFraction)
@@ -289,7 +324,10 @@ private fun VoiceStrip(
         if (!busy) {
             if (suggestions.isNotEmpty()) {
                 SuggestionStrip(suggestions, actions::acceptSuggestion)
-            } else {
+            } else if (state.statusDetail.isNotEmpty()) {
+                // Empty most of the time, and gone rather than reading "Ready" for ever.
+                // The engine clears it a moment after it stops being news; a line that
+                // always says the same thing is a line nobody reads.
                 Text(
                     text = state.statusDetail,
                     color = if (state.error != null) ScribeTokens.rec else ScribeTokens.faint,
@@ -304,18 +342,34 @@ private fun VoiceStrip(
 /**
  * Completions for the word being typed, in the line where the status usually sits.
  *
- * Three at most. A strip of five is a strip nobody reads: the eye takes the first, glances
- * at the second, and the rest are width spent on nothing.
+ * **The pick is in the middle and it is the bright one.** Every keyboard puts its best guess
+ * somewhere and then relies on the user learning where; putting it in the centre and giving
+ * it the only near-white text on the row means it does not have to be learned. The
+ * alternatives sit either side, dimmer, fading toward the background — present if wanted,
+ * and not competing for the glance.
+ *
+ * Three at most, and the order is deliberately not "best first, left to right": the eye
+ * lands in the middle of a row, so that is where the answer goes.
  */
 @Composable
 private fun SuggestionStrip(words: List<String>, onAccept: (String) -> Unit) {
     val haptics = rememberKeyHaptics()
+    // Best in the centre, second to its left, third to its right.
+    val ordered = when (words.size) {
+        0 -> emptyList()
+        1 -> words
+        2 -> listOf(words[1], words[0])
+        else -> listOf(words[1], words[0], words[2])
+    }
+    val pick = words.firstOrNull()
+
     Row(
-        Modifier.fillMaxWidth().height(22.dp).testTag("suggestions"),
+        Modifier.fillMaxWidth().height(24.dp).testTag("suggestions"),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        words.forEach { word ->
+        ordered.forEach { word ->
+            val chosen = word == pick
             Box(
                 Modifier
                     .testTag("suggestion-$word")
@@ -325,7 +379,12 @@ private fun SuggestionStrip(words: List<String>, onAccept: (String) -> Unit) {
                     .clickable { haptics(); onAccept(word) },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(word, color = ScribeTokens.muted, fontSize = 13.sp)
+                Text(
+                    word,
+                    color = if (chosen) ScribeTokens.text else ScribeTokens.faint,
+                    fontSize = if (chosen) 14.sp else 13.sp,
+                    fontWeight = if (chosen) FontWeight.Medium else FontWeight.Normal,
+                )
             }
         }
     }
@@ -475,3 +534,7 @@ private fun PermissionRow(onOpenApp: () -> Unit) {
         }
     }
 }
+
+/** How far the panel rises on its way in. Small: this rides on the system's own slide. */
+private const val ENTRANCE_TRAVEL_PX = 42f
+private const val ENTRANCE_MS = 220

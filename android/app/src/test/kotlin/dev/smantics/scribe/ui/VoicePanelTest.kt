@@ -35,7 +35,9 @@ import org.robolectric.annotation.GraphicsMode
  * the half that made the failure invisible.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+// A screen big enough to hold the whole panel. Robolectric's default is 320x470 dp, which
+// is narrower and shorter than any phone this runs on and shorter than the keyboard itself.
+@Config(sdk = [33], qualifiers = "+w420dp-h1000dp")
 @GraphicsMode(GraphicsMode.Mode.LEGACY)
 @ConscryptMode(ConscryptMode.Mode.OFF)
 class VoicePanelTest {

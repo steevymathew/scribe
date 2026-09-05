@@ -30,6 +30,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import dev.smantics.scribe.ui.components.neuKey
@@ -74,6 +75,7 @@ fun KeysCardStack(
     pageContent: @Composable BoxScope.(KeyboardPage) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val metrics = LocalDensity.current
     val haptics = rememberKeyHaptics()
     val grabHaptics = rememberGrabHaptics()
 
@@ -120,9 +122,16 @@ fun KeysCardStack(
             .height(KeyMetrics.edgeHeight + (fullHeight - KeyMetrics.edgeHeight) * upright),
         contentAlignment = Alignment.BottomCenter,
     ) {
-        // The edge sits underneath the whole time and simply stops being covered, so there
-        // is never a frame with neither the card nor its edge on screen.
-        KeysGrabber(onShow = { currentOnOpen(true) })
+        // Only there once the card is on its way down. It used to sit underneath the whole
+        // time, which meant a stray line across the bottom of a keyboard that was already
+        // up — a control for a state you were not in. It fades in exactly as the card tips
+        // away, so what you are looking at is the edge the card went behind.
+        if (upright < 0.995f) {
+            KeysGrabber(
+                onShow = { currentOnOpen(true) },
+                modifier = Modifier.graphicsLayer { alpha = 1f - upright },
+            )
+        }
 
         if (upright > 0.005f) {
             Box(
@@ -170,22 +179,38 @@ fun KeysCardStack(
                         .graphicsLayer { translationX = slide },
                 ) {
                     pageContent(currentPage)
-                    // The chevrons sit in the grab band, which is the only sign that band
-                    // exists — so they advertise both the page beside this one and the edge
-                    // that can be taken hold of.
-                    PageHint(currentPage, toLeft = true, modifier = Modifier.align(Alignment.CenterStart))
-                    PageHint(currentPage, toLeft = false, modifier = Modifier.align(Alignment.CenterEnd))
+                    // The grips are the only sign the band exists, so they sit exactly
+                    // where it does and light up when it is being used.
+                    EdgeGrip(
+                        page = currentPage,
+                        toLeft = true,
+                        active = grabbed && slide > 0f,
+                        modifier = Modifier.align(Alignment.CenterStart),
+                    )
+                    EdgeGrip(
+                        page = currentPage,
+                        toLeft = false,
+                        active = grabbed && slide < 0f,
+                        modifier = Modifier.align(Alignment.CenterEnd),
+                    )
+                    BottomGrip(
+                        active = grabbed && upright < 1f,
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                    )
                 }
 
                 incoming?.let { next ->
                     // Placed on whichever side the current page is being pushed away from,
-                    // exactly one card-width along. Edge to edge; nothing stacks.
+                    // one card-width along **plus a gap**. Without the gap the two faces
+                    // touch and read as one long strip sliding past; with it they are
+                    // plainly two cards, one arriving and one leaving.
                     val direction = if (slide < 0f) 1f else -1f
+                    val gap = with(metrics) { CARD_GAP.toPx() }
                     CardFace(
                         grabbed = false,
                         modifier = Modifier
                             .testTag("keys-card-incoming")
-                            .graphicsLayer { translationX = slide + direction * widthPx },
+                            .graphicsLayer { translationX = slide + direction * (widthPx + gap) },
                     ) { pageContent(next) }
                 }
             }
@@ -259,47 +284,37 @@ private fun Modifier.cardGestures(
 
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
+        val start = down.position
+        val onLeftOrRight = start.x < edgeBand || start.x > size.width - edgeBand
+        val onBottom = start.y > size.height - edgeBand
+
+        // **The card only moves from its edges, and this is the whole fix for it being
+        // eager.** A drag used to be recognised anywhere on the card, so a thumb that
+        // travelled a few millimetres on its way between keys started pushing the keyboard
+        // off screen — while typing, which is the worst possible moment. Confining the
+        // gesture to the border means it cannot fire from a key at all, because there is no
+        // key there: the band is the padding between the frame and the first row. The
+        // divots drawn in it say where it is.
+        if (!onLeftOrRight && !onBottom) return@awaitEachGesture
+
         // A finger on the card takes it back from whatever spring was carrying it. Catching
         // a card mid-flight is most of what makes it feel like an object rather than a
         // sequence of animations.
         settling()?.cancel()
         setSettling(null)
-        val start = down.position
-        val onLeftOrRight = start.x < edgeBand || start.x > size.width - edgeBand
-        val onBottom = start.y > size.height - edgeBand
 
         val tracker = VelocityTracker()
         tracker.addPosition(down.uptimeMillis, start)
 
-        // A press that stays put on an edge takes hold of the whole card. Deliberately
-        // longer than a key's long press so the two do not race, and answered with a
-        // heavier buzz, because the gestures live on top of each other and the hand has to
-        // be told which one it got.
-        var held = false
-        if (onLeftOrRight || onBottom) {
-            val outcome = withTimeoutOrNull(GRAB_HOLD_MS) {
-                var result = Hold.GRABBED
-                while (true) {
-                    val event = awaitPointerEvent()
-                    val change = event.changes.firstOrNull { it.id == down.id }
-                    if (change == null || !change.pressed) { result = Hold.RELEASED; break }
-                    tracker.addPosition(change.uptimeMillis, change.position)
-                    if ((change.position - start).getDistance() > slop) {
-                        result = Hold.MOVED
-                        break
-                    }
-                }
-                result
-            }
-            if (outcome == null) {
-                held = true
-                setGrabbed(true)
-                grabHaptics()
-            } else if (outcome == Hold.RELEASED) {
-                // A tap on the frame. Nothing to do, and nothing to undo.
-                return@awaitEachGesture
-            }
-        }
+        // Touching the band lights it: the card is already yours, and Material's own
+        // language for "this responds" is that it acknowledges the touch before it moves.
+        setGrabbed(true)
+        grabHaptics()
+
+        // The axis comes from the edge that was touched, not from which way the finger
+        // goes. Taking hold of the side means sideways; taking hold of the bottom means
+        // down. There is nothing to guess and nothing to lock.
+        val held = true
 
         var axis = Axis.UNDECIDED
         var travel = Offset.Zero
@@ -333,22 +348,13 @@ private fun Modifier.cardGestures(
             travel += change.positionChange()
             tracker.addPosition(change.uptimeMillis, change.position)
 
-            if (axis == Axis.UNDECIDED) {
-                // A grab already knows which way it is going — the edge that was taken hold
-                // of says so, and that is most of why grabbing feels deliberate.
-                axis = when {
-                    held && onBottom -> Axis.VERTICAL
-                    held -> Axis.HORIZONTAL
-                    abs(travel.x) > slop && abs(travel.x) > abs(travel.y) -> Axis.HORIZONTAL
-                    abs(travel.y) > slop && abs(travel.y) > abs(travel.x) -> Axis.VERTICAL
-                    else -> Axis.UNDECIDED
-                }
-                if (axis != Axis.UNDECIDED && !claimed) {
+            if (axis == Axis.UNDECIDED && travel.getDistance() > slop) {
+                axis = if (onBottom) Axis.VERTICAL else Axis.HORIZONTAL
+                if (!claimed) {
                     claimed = true
-                    // The gesture is the card's now, so the key that fired on touch-down
-                    // takes its character back. See SwipeArbiter.
+                    // Kept as insurance rather than necessity: no key can have fired,
+                    // because the band the gesture started in has no keys in it.
                     onDragClaimed()
-                    if (!held) haptics()
                 }
             }
 
@@ -476,6 +482,15 @@ private const val RUBBER_BAND = 0.28f
 
 /** The card comes towards you when it is taken hold of. */
 private const val GRAB_LIFT = 1.015f
+
+/**
+ * The air between the card leaving and the card arriving.
+ *
+ * Without it the two faces touch and read as one long strip sliding past — which is what
+ * they technically are, and exactly what they should not look like. The gap is what makes
+ * it two objects.
+ */
+private val CARD_GAP = 14.dp
 
 /** Tipped this far from the viewer is edge-on, and there is nothing left to show. */
 private const val CARD_LAY_DEGREES = 82f

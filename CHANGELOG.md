@@ -8,6 +8,41 @@ A dated record of what changed and when. Newest first. Times are local
 The Android port has its own docs (`android/README.md`, `android/docs/`); this section
 records what shipped and when, so the history is legible from the root of the project.
 
+### 2026-09-05 — v0.13.0: the card only moves from its edges
+
+- **The drag was eager and now it is confined.** A gesture recognised anywhere on the card
+  meant a thumb travelling a few millimetres between keys started pushing the keyboard off
+  screen — while typing. It is now recognised only in the card's edge band, the strip of
+  padding between the frame and the first row, which has no keys in it and therefore cannot
+  fire from one. Touching the band lights it and gives the grab haptic before anything moves.
+- **Divots mark the band.** A depression on each side with a chevron in it, and a wider one
+  along the bottom. A band that does something and looks like nothing is worse than no band.
+- **A gap between the cards.** Edge to edge they read as one long strip sliding past, which
+  is what they technically are and exactly what they should not look like.
+- **The panel has rounded top corners** matching the card's radius, so the black behind the
+  keys reads as part of the device rather than a rectangle pasted over the app, and rises
+  the last few pixels into place on top of the system's own slide. Painted to the shape
+  rather than clipped to it: `Modifier.clip` introduces a layer that rejects pointer input
+  outside its bounds, which cost eight failing tests to find.
+- **The pull-up edge is a lit line, not a bar** — the card's own corner radius and near-black
+  body with a single hairline along the top — and it is only there when the keys are down.
+  It used to sit behind the card the whole time, a control for a state you were not in.
+- **The status clears itself.** "Ready" and "Inserted" get their moment and then the row goes
+  quiet; a line that always says the same thing is a line nobody reads, and that row is where
+  suggestions live. Errors are never tidied away.
+- **The suggestion strip puts its pick in the middle**, in the only near-white text on the
+  row, with the alternatives either side and dimmer. Every keyboard puts its best guess
+  somewhere and then relies on the user learning where.
+- **A wider space bar**, and its neighbours a little narrower — it is the default action of
+  that row. Row widths are now given per row rather than per key, so the invariant that every
+  row is exactly ten key-widths is explicit and tested.
+- **The emoji page has its own bottom row**: `ABC · space · backspace · enter`. A comma is no
+  use while picking a face and backspace is the first thing anybody reaches for after picking
+  the wrong one. The grid has real gaps and keys the same height as the letters.
+- **Only the letters split** on a wide screen. A number row cut in two puts `5` and `6` a
+  hand apart for no reason.
+- 293 tests, all green.
+
 ### 2026-09-05 — v0.12.1: fix the crash that stopped the app starting
 
 - **v0.12.0 could not run.** `TypingAssistant(assets)` was a property initialiser, and

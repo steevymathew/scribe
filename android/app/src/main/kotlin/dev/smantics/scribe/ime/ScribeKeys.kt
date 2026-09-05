@@ -2,6 +2,7 @@ package dev.smantics.scribe.ime
 
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -39,6 +40,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
@@ -55,6 +59,7 @@ import androidx.compose.ui.unit.sp
 import dev.smantics.scribe.ui.components.Glyph
 import dev.smantics.scribe.ui.components.GlyphName
 import dev.smantics.scribe.ui.components.neuKey
+import dev.smantics.scribe.ui.components.neuInset
 import dev.smantics.scribe.ui.theme.ScribeTokens
 import kotlin.math.abs
 import kotlinx.coroutines.withTimeoutOrNull
@@ -90,7 +95,7 @@ object KeyMetrics {
     val keyRadius = 13.dp
 
     /** The card seen edge-on, when it is lying face down. */
-    val edgeHeight = 22.dp
+    val edgeHeight = 14.dp
 }
 
 /**
@@ -164,7 +169,7 @@ fun KeyboardPageContent(
         // The bottom row is on every page, emoji included: it is the way back, and a page
         // you can only leave by knowing a gesture is a page you get stuck on.
         KeyRow(
-            keys = KeyboardLayout.bottomRow,
+            keys = KeyboardLayout.bottomRowFor(page),
             page = page,
             shift = shift,
             split = false,
@@ -179,39 +184,79 @@ fun KeyboardPageContent(
 }
 
 /**
- * A chevron on the edge of the card, when there is a page that way.
+ * The grip on the side of the card: a divot you can get a thumb into.
  *
- * Deliberately at the very bottom of the visible range. It has to be findable by someone
- * looking for a way out and ignorable by everyone else; a hint loud enough to notice while
- * typing is a hint that has become decoration.
+ * This band is the only part of the card with no keys in it, and since the last round it is
+ * the **only** place the card can be dragged from — a gesture that could start anywhere was
+ * firing while people typed. A band that does something and looks like nothing is worse than
+ * no band, so it is drawn as a depression: the one shape on this keyboard that means *press
+ * here*, in a place where nothing else does.
  *
- * It also marks the band where a press and hold takes hold of the whole card, which is the
- * only sign that gesture exists — so it sits exactly where the grab does.
+ * It brightens under the touch, before anything moves, which is the acknowledgement Material
+ * asks for and the thing that tells you the card is yours.
  */
 @Composable
-fun PageHint(page: KeyboardPage, toLeft: Boolean, modifier: Modifier = Modifier) {
+fun EdgeGrip(
+    page: KeyboardPage,
+    toLeft: Boolean,
+    active: Boolean,
+    modifier: Modifier = Modifier,
+) {
     val target = (if (toLeft) page.left() else page.right()) ?: return
+    val tint by animateColorAsState(
+        if (active) ScribeTokens.accent else ScribeTokens.faint.copy(alpha = 0.45f),
+        label = "grip-tint",
+    )
     Box(
         modifier
-            .testTag(if (toLeft) "hint-left" else "hint-right")
-            .size(width = 12.dp, height = 36.dp)
+            .testTag(if (toLeft) "grip-left" else "grip-right")
+            .padding(horizontal = 1.dp)
+            .size(width = GRIP_THICKNESS, height = GRIP_LENGTH)
+            .neuInset(RoundedCornerShape(GRIP_THICKNESS / 2), depth = if (active) 1.1f else 0.6f)
             .semantics {
                 contentDescription = when (target) {
-                    KeyboardPage.EMOJI -> "Swipe for emoji"
-                    KeyboardPage.SYMBOLS -> "Swipe for symbols"
-                    KeyboardPage.LETTERS -> "Swipe for letters"
+                    KeyboardPage.EMOJI -> "Drag for emoji"
+                    KeyboardPage.SYMBOLS -> "Drag for symbols"
+                    KeyboardPage.LETTERS -> "Drag for letters"
                 }
             },
         contentAlignment = Alignment.Center,
     ) {
         Glyph(
             if (toLeft) GlyphName.CHEVRON_LEFT else GlyphName.CHEVRON_RIGHT,
-            ScribeTokens.faint.copy(alpha = 0.5f),
-            size = 10.dp,
-            thickness = 1.4.dp,
+            tint,
+            size = 9.dp,
+            thickness = 1.3.dp,
         )
     }
 }
+
+/** The same divot along the bottom, which is the edge the card is pushed down by. */
+@Composable
+fun BottomGrip(active: Boolean, modifier: Modifier = Modifier) {
+    val tint by animateColorAsState(
+        if (active) ScribeTokens.accent else ScribeTokens.faint.copy(alpha = 0.35f),
+        label = "bottom-grip-tint",
+    )
+    Box(
+        modifier
+            .testTag("grip-bottom")
+            .padding(bottom = 1.dp)
+            .size(width = GRIP_LENGTH * 1.6f, height = GRIP_THICKNESS)
+            .neuInset(RoundedCornerShape(GRIP_THICKNESS / 2), depth = if (active) 1.1f else 0.6f),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier
+                .size(width = 26.dp, height = 1.5.dp)
+                .background(tint, RoundedCornerShape(1.dp)),
+        )
+    }
+}
+
+/** Thin enough to be furniture, long enough to aim at. */
+private val GRIP_THICKNESS = 11.dp
+private val GRIP_LENGTH = 40.dp
 
 /**
  * The card seen edge-on, which is all that is left when the keys are laid face down.
@@ -230,33 +275,47 @@ fun KeysGrabber(onShow: () -> Unit, modifier: Modifier = Modifier) {
             .testTag("keys-grabber")
             .fillMaxWidth()
             .height(KeyMetrics.edgeHeight)
-            .neuKey(
-                shape = RoundedCornerShape(ScribeTokens.radiusSm),
-                pressed = false,
-                surface = ScribeTokens.s1,
-            )
-            .border(1.dp, ScribeTokens.stroke, RoundedCornerShape(ScribeTokens.radiusSm))
-            .semantics { contentDescription = "Swipe up for the keys" }
+            // Same corner radius as the card, because it is the card. The body is the
+            // card's own near-black; the only thing that distinguishes it from the
+            // background is the hairline along the top, which is where the light is.
+            .clip(RoundedCornerShape(topStart = ScribeTokens.radius, topEnd = ScribeTokens.radius))
+            .background(ScribeTokens.s0)
+            .semantics { contentDescription = "Pull the keyboard back up" }
             .pointerInput(Unit) {
                 var travel = 0f
                 detectDragGestures(
                     onDragStart = { travel = 0f },
-                    onDragEnd = { if (travel < -SWIPE_THRESHOLD_PX) show() },
+                    onDragEnd = { if (travel < -EDGE_PULL_PX) show() },
                 ) { change, amount ->
                     travel += amount.y
                     change.consume()
                 }
             }
             .pointerInput(Unit) { detectTapGestures { show() } },
-        contentAlignment = Alignment.Center,
+        contentAlignment = Alignment.TopCenter,
     ) {
+        // A single lit line across the top: a card lying face down, catching the same light
+        // that moulds the keys. Anything more than this is a bar, and a bar is furniture.
         Box(
             Modifier
-                .size(width = 42.dp, height = 3.dp)
-                .background(ScribeTokens.faint.copy(alpha = 0.45f), RoundedCornerShape(2.dp)),
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp)
+                .height(1.dp)
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            Color.Transparent,
+                            ScribeTokens.stroke2,
+                            Color.Transparent,
+                        ),
+                    ),
+                ),
         )
     }
 }
+
+/** How far the edge has to be pulled before the card comes back up. */
+private const val EDGE_PULL_PX = 40f
 
 // ------------------------------------------------------------------------ the keys
 
@@ -279,7 +338,9 @@ private fun ColumnScope.Keys(
         keys = KeyboardLayout.numberRow,
         page = page,
         shift = shift,
-        split = split,
+        // Never split: the stagger exists so each hand keeps its half of the alphabet, and
+        // digits are not typed that way. See KeyboardLayout.splittable.
+        split = split && KeyboardLayout.splittable(page, KeyboardLayout.numberRow),
         actions = actions,
         arbiter = arbiter,
         onPage = onPage,
@@ -298,7 +359,7 @@ private fun ColumnScope.Keys(
             keys = row,
             page = page,
             shift = shift,
-            split = split,
+            split = split && KeyboardLayout.splittable(page, row),
             leading = if (isLast) Key.Shift else null,
             trailing = if (isLast) Key.Backspace else null,
             actions = actions,
@@ -329,7 +390,9 @@ private fun KeyRow(
     // Padded to a fixed ten units, so a nine-key row does not come out fatter than a
     // ten-key one. This is the stagger a physical keyboard has, and without it `asdfghjkl`
     // was visibly wider than `qwertyuiop` and a thumb aiming between rows missed.
-    val indent = KeyboardLayout.indentFor(listOfNotNull(leading) + keys + listOfNotNull(trailing))
+    val full = listOfNotNull(leading) + keys + listOfNotNull(trailing)
+    val indent = KeyboardLayout.indentFor(full)
+    val weights = KeyboardLayout.weightsFor(full)
 
     Row(
         Modifier.fillMaxWidth().height(KeyMetrics.rowHeight),
@@ -338,6 +401,7 @@ private fun KeyRow(
         val button: @Composable RowScope.(Key) -> Unit = { key ->
             KeyButton(
                 key = key,
+                weight = weights.getOrElse(full.indexOf(key)) { KeyboardLayout.weightOf(key) },
                 page = page,
                 shift = shift,
                 actions = actions,
@@ -378,6 +442,7 @@ private fun KeyRow(
 @Composable
 private fun RowScope.KeyButton(
     key: Key,
+    weight: Float,
     page: KeyboardPage,
     shift: ShiftState,
     actions: PanelActions,
@@ -466,7 +531,7 @@ private fun RowScope.KeyButton(
     Box(
         Modifier
             .testTag("key-$description")
-            .weight(KeyboardLayout.weightOf(key))
+            .weight(weight)
             .fillMaxHeight()
             .neuKey(
                 shape = RoundedCornerShape(KeyMetrics.keyRadius),
@@ -712,7 +777,7 @@ private fun ColumnScope.EmojiPage(onEmoji: (String) -> Unit) {
             .fillMaxWidth()
             .height(KeyMetrics.contentHeight)
             .verticalScroll(scroll),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(KeyMetrics.rowGap),
     ) {
         Emoji.categories.forEach { (name, glyphs) ->
             Text(
@@ -721,10 +786,13 @@ private fun ColumnScope.EmojiPage(onEmoji: (String) -> Unit) {
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Medium,
                 letterSpacing = 1.2.sp,
-                modifier = Modifier.padding(start = 6.dp, top = 6.dp, bottom = 2.dp),
+                modifier = Modifier.padding(start = 8.dp, top = 8.dp, bottom = 2.dp),
             )
             glyphs.chunked(EMOJI_PER_ROW).forEach { rowGlyphs ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(KeyMetrics.keyGap),
+                ) {
                     rowGlyphs.forEach { glyph ->
                         EmojiKey(glyph, Modifier.weight(1f)) { onEmoji(glyph) }
                     }
@@ -743,8 +811,8 @@ private fun EmojiKey(glyph: String, modifier: Modifier, onClick: () -> Unit) {
     val haptics = rememberKeyHaptics()
     Box(
         modifier
-            .height(40.dp)
-            .neuKey(RoundedCornerShape(KeyMetrics.keyRadius), pressed, ScribeTokens.s1)
+            .height(KeyMetrics.rowHeight)
+            .neuKey(RoundedCornerShape(KeyMetrics.keyRadius), pressed, ScribeTokens.s2)
             .semantics { contentDescription = glyph }
             .pointerInput(glyph) {
                 detectTapGestures(
@@ -759,11 +827,11 @@ private fun EmojiKey(glyph: String, modifier: Modifier, onClick: () -> Unit) {
             },
         contentAlignment = Alignment.Center,
     ) {
-        Text(glyph, fontSize = 21.sp)
+        Text(glyph, fontSize = 22.sp)
     }
 }
 
-private const val EMOJI_PER_ROW = 8
+private const val EMOJI_PER_ROW = 7
 
 /**
  * How far a finger travels before it counts as a swipe rather than a wobble.

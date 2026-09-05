@@ -1,6 +1,7 @@
 package dev.smantics.scribe.ime
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -62,10 +63,11 @@ class KeyboardLayoutTest {
             KeyboardLayout.letterRows[1],
             listOf(Key.Shift) + KeyboardLayout.letterRows[2] + listOf(Key.Backspace),
             KeyboardLayout.bottomRow,
+            KeyboardLayout.emojiBottomRow,
         ) + KeyboardLayout.symbolRows + KeyboardLayout.symbolRowsShifted
 
         rows.forEach { row ->
-            val used = row.sumOf { KeyboardLayout.weightOf(it).toDouble() }.toFloat()
+            val used = KeyboardLayout.weightsFor(row).sum()
             val padded = used + KeyboardLayout.indentFor(row) * 2
             assertEquals(
                 "row ${chars(row)} is $used units, padded to $padded",
@@ -79,6 +81,47 @@ class KeyboardLayoutTest {
     @Test fun `the nine key rows are indented by half a key at each end`() {
         assertEquals(0.5f, KeyboardLayout.indentFor(KeyboardLayout.letterRows[1]))
         assertEquals(0f, KeyboardLayout.indentFor(KeyboardLayout.letterRows[0]))
+    }
+
+    /** The default action of the bottom row, and sized like one. */
+    @Test fun `the space bar is the widest key on the board`() {
+        val widths = KeyboardLayout.weightsFor(KeyboardLayout.bottomRow)
+        val space = widths[KeyboardLayout.bottomRow.indexOf(Key.Space)]
+        assertTrue("space is $space", space > 4.5f)
+        assertTrue(widths.all { it <= space })
+    }
+
+    /**
+     * The emoji page gets its own bottom row. A comma is no use while picking a face, and
+     * backspace is the first thing anybody reaches for after picking the wrong one.
+     */
+    @Test fun `the emoji page has a backspace and no punctuation`() {
+        val row = KeyboardLayout.bottomRowFor(KeyboardPage.EMOJI)
+        assertTrue(row.contains(Key.Backspace))
+        assertTrue(row.none { it is Key.Char })
+        assertTrue(row.none { it is Key.Emoji })
+    }
+
+    @Test fun `the letters and symbols pages keep the ordinary bottom row`() {
+        assertEquals(KeyboardLayout.bottomRow, KeyboardLayout.bottomRowFor(KeyboardPage.LETTERS))
+        assertEquals(KeyboardLayout.bottomRow, KeyboardLayout.bottomRowFor(KeyboardPage.SYMBOLS))
+    }
+
+    // ---------------------------------------------------------------- splitting
+
+    /**
+     * Only the letters split. A number row cut in two puts `5` and `6` a hand apart for no
+     * reason — the stagger exists so each *hand* keeps its own half of the alphabet.
+     */
+    @Test fun `only the letter rows split`() {
+        KeyboardLayout.letterRows.forEach {
+            assertTrue(KeyboardLayout.splittable(KeyboardPage.LETTERS, it))
+        }
+        assertFalse(KeyboardLayout.splittable(KeyboardPage.LETTERS, KeyboardLayout.numberRow))
+        assertFalse(KeyboardLayout.splittable(KeyboardPage.LETTERS, KeyboardLayout.bottomRow))
+        KeyboardLayout.symbolRows.forEach {
+            assertFalse(KeyboardLayout.splittable(KeyboardPage.SYMBOLS, it))
+        }
     }
 
     /**

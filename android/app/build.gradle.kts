@@ -24,8 +24,8 @@ android {
         applicationId = "dev.smantics.scribe"
         minSdk = 33
         targetSdk = 35
-        versionCode = 13
-        versionName = "0.12.1"
+        versionCode = 14
+        versionName = "0.13.0"
 
         // docs/jni-contract.md: arm64-v8a only. Every current Android device Scribe
         // targets is arm64, and shipping one ABI keeps the sideloadable APK small.

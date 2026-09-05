@@ -44,7 +44,9 @@ import org.robolectric.annotation.GraphicsMode
  * forbid.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+// A screen big enough to hold the whole panel. Robolectric's default is 320x470 dp, which
+// is narrower and shorter than any phone this runs on and shorter than the keyboard itself.
+@Config(sdk = [33], qualifiers = "+w420dp-h1000dp")
 @GraphicsMode(GraphicsMode.Mode.LEGACY)
 @ConscryptMode(ConscryptMode.Mode.OFF)
 class ScribePanelTest {
@@ -132,12 +134,15 @@ class ScribePanelTest {
         compose.onNodeWithTag("key-0").assertIsDisplayed()
     }
 
-    /** The gestures need somewhere to be discovered from. */
-    @Test fun `the pages hint at each other`() {
+    /**
+     * The grips are the only sign the drag band exists, and since the card can now *only*
+     * be moved from that band, they are the only sign the gesture exists at all.
+     */
+    @Test fun `the edges say which way the card goes`() {
         panel()
         showKeys()
-        compose.onNodeWithContentDescription("Swipe for emoji").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Swipe for symbols").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Drag for emoji").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Drag for symbols").assertIsDisplayed()
     }
 
     /** The emoji page is reachable without knowing the gesture. */
@@ -543,10 +548,10 @@ class ScribePanelTest {
             "Symbols",
             "Shift",
             "Open Scribe",
-            // The gestures are the only way to reach two of the three pages without a
-            // key, so the hints that advertise them have to be readable too.
-            "Swipe for emoji",
-            "Swipe for symbols",
+            // The card can only be dragged from its edge band, so the grips that mark it
+            // are the only sign the gesture exists and have to be readable too.
+            "Drag for emoji",
+            "Drag for symbols",
         ).forEach { label ->
             val nodes = compose.onAllNodesWithContentDescription(label).fetchSemanticsNodes()
             assertTrue("no node described as \"$label\"", nodes.isNotEmpty())

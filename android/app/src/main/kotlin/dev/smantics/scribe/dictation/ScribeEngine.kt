@@ -779,12 +779,16 @@ class ScribeEngine private constructor(private val appContext: Context) {
                 statusDetail = "Loading ${event.model}…",
                 error = null,
             )
-            is DictationEvent.ModelLoaded -> current.copy(
-                status = DictationStatus.READY,
-                statusDetail = "Ready",
-                modelName = event.model,
-                error = null,
-            )
+            is DictationEvent.ModelLoaded -> {
+                // "Ready" is worth saying once, when it becomes true, and then not again.
+                scheduleReadyFlash()
+                current.copy(
+                    status = DictationStatus.READY,
+                    statusDetail = "Ready",
+                    modelName = event.model,
+                    error = null,
+                )
+            }
             DictationEvent.RecordingStarted -> current.copy(
                 status = DictationStatus.RECORDING,
                 statusDetail = "Listening…",
@@ -854,7 +858,12 @@ class ScribeEngine private constructor(private val appContext: Context) {
             {
                 val now = _state.value
                 if (now.status == DictationStatus.READY && now.stage == DictationStage.IDLE) {
-                    _state.value = now.copy(statusDetail = "Ready")
+                    // **Cleared, not reset to "Ready".** The line is where suggestions go
+                    // while typing, and a permanent "Ready" is both in the way and useless:
+                    // it says the same thing every time it is read. News gets a moment and
+                    // then the row goes quiet. An error is not news and is never cleared
+                    // here — the status check above leaves it alone.
+                    _state.value = now.copy(statusDetail = "")
                 }
             },
             ScribeMotion.DONE_FLASH.toLong(),
