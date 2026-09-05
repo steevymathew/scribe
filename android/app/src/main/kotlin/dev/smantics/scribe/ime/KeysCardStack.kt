@@ -1,6 +1,6 @@
 package dev.smantics.scribe.ime
 
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -36,6 +36,7 @@ import dev.smantics.scribe.ui.components.neuKey
 import dev.smantics.scribe.ui.theme.ScribeTokens
 import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -78,11 +79,18 @@ fun KeysCardStack(
 
     val fullHeight = KeyMetrics.keysHeight + KeyMetrics.cardPadding * 2
 
+    // **Plain floats, written directly.** These were `Animatable`s, and every pointer event
+    // launched a coroutine to `snapTo` them — which puts a mutex and a scheduling hop
+    // between the finger and the card, on the one surface whose whole job is to feel
+    // attached to the finger. A drag writes these; only the settle animates them.
     /** Horizontal travel in pixels; zero is the current page centred. */
-    val slide = remember { Animatable(0f) }
+    var slide by remember { mutableFloatStateOf(0f) }
 
     /** One is upright and readable, zero is lying on its face. */
-    val upright = remember { Animatable(if (open) 1f else 0f) }
+    var upright by remember { mutableFloatStateOf(if (open) 1f else 0f) }
+
+    /** The settle in flight, cancelled the instant a finger lands again. */
+    var settling by remember { mutableStateOf<Job?>(null) }
 
     /** The page being pulled in, drawn beside the current one and never on top of it. */
     var incoming by remember { mutableStateOf<KeyboardPage?>(null) }
@@ -101,20 +109,22 @@ fun KeysCardStack(
     // Settings and the edge's own tap change `open` from outside a drag; the card follows.
     LaunchedEffect(open) {
         val target = if (open) 1f else 0f
-        if (upright.targetValue != target) upright.animateTo(target, settle())
+        if (upright != target) {
+            animate(upright, target, animationSpec = settle()) { value, _ -> upright = value }
+        }
     }
 
     Box(
         modifier
             .fillMaxWidth()
-            .height(KeyMetrics.edgeHeight + (fullHeight - KeyMetrics.edgeHeight) * upright.value),
+            .height(KeyMetrics.edgeHeight + (fullHeight - KeyMetrics.edgeHeight) * upright),
         contentAlignment = Alignment.BottomCenter,
     ) {
         // The edge sits underneath the whole time and simply stops being covered, so there
         // is never a frame with neither the card nor its edge on screen.
         KeysGrabber(onShow = { currentOnOpen(true) })
 
-        if (upright.value > 0.005f) {
+        if (upright > 0.005f) {
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -123,20 +133,24 @@ fun KeysCardStack(
                     .graphicsLayer {
                         // Tipped away from the viewer around the bottom edge, which is what
                         // reads as a hinge rather than a spin.
-                        rotationX = -CARD_LAY_DEGREES * (1f - upright.value)
+                        rotationX = -CARD_LAY_DEGREES * (1f - upright)
                         transformOrigin = TransformOrigin(0.5f, 1f)
                         // Without a camera distance the projection is severe enough to look
                         // like the card is being crushed rather than tilted.
                         cameraDistance = 16f * density
-                        alpha = (upright.value * 2.4f).coerceAtMost(1f)
+                        alpha = (upright * 2.4f).coerceAtMost(1f)
                         // A card that has been taken hold of comes towards you a little.
                         val lift = if (grabbed) GRAB_LIFT else 1f
                         scaleX = lift
                         scaleY = lift
                     }
                     .cardGestures(
-                        slide = slide,
-                        upright = upright,
+                        slide = { slide },
+                        setSlide = { slide = it },
+                        upright = { upright },
+                        setUpright = { upright = it },
+                        settling = { settling },
+                        setSettling = { settling = it },
                         width = { widthPx },
                         setGrabbed = { grabbed = it },
                         page = { currentPage },
@@ -153,7 +167,7 @@ fun KeysCardStack(
                     grabbed = grabbed,
                     modifier = Modifier
                         .testTag("keys-card")
-                        .graphicsLayer { translationX = slide.value },
+                        .graphicsLayer { translationX = slide },
                 ) {
                     pageContent(currentPage)
                     // The chevrons sit in the grab band, which is the only sign that band
@@ -166,12 +180,12 @@ fun KeysCardStack(
                 incoming?.let { next ->
                     // Placed on whichever side the current page is being pushed away from,
                     // exactly one card-width along. Edge to edge; nothing stacks.
-                    val direction = if (slide.value < 0f) 1f else -1f
+                    val direction = if (slide < 0f) 1f else -1f
                     CardFace(
                         grabbed = false,
                         modifier = Modifier
                             .testTag("keys-card-incoming")
-                            .graphicsLayer { translationX = slide.value + direction * widthPx },
+                            .graphicsLayer { translationX = slide + direction * widthPx },
                     ) { pageContent(next) }
                 }
             }
@@ -222,8 +236,12 @@ private enum class Hold { GRABBED, MOVED, RELEASED }
  * press that *stays still* on an edge has to become a grab rather than a drag.
  */
 private fun Modifier.cardGestures(
-    slide: Animatable<Float, *>,
-    upright: Animatable<Float, *>,
+    slide: () -> Float,
+    setSlide: (Float) -> Unit,
+    upright: () -> Float,
+    setUpright: (Float) -> Unit,
+    settling: () -> Job?,
+    setSettling: (Job?) -> Unit,
     width: () -> Float,
     setGrabbed: (Boolean) -> Unit,
     page: () -> KeyboardPage,
@@ -241,6 +259,11 @@ private fun Modifier.cardGestures(
 
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
+        // A finger on the card takes it back from whatever spring was carrying it. Catching
+        // a card mid-flight is most of what makes it feel like an object rather than a
+        // sequence of animations.
+        settling()?.cancel()
+        setSettling(null)
         val start = down.position
         val onLeftOrRight = start.x < edgeBand || start.x > size.width - edgeBand
         val onBottom = start.y > size.height - edgeBand
@@ -291,7 +314,10 @@ private fun Modifier.cardGestures(
                     travel = travel,
                     velocity = tracker.calculateVelocity(),
                     slide = slide,
+                    setSlide = setSlide,
                     upright = upright,
+                    setUpright = setUpright,
+                    setSettling = setSettling,
                     width = width(),
                     layDistance = layDistance,
                     page = page,
@@ -332,14 +358,15 @@ private fun Modifier.cardGestures(
                     val next = if (travel.x > 0) page().right() else page().left()
                     setIncoming(next)
                     // Resisted at the ends of the run, so a pull toward nothing says so
-                    // rather than sliding into blankness.
+                    // rather than sliding into blankness. Written straight to the state:
+                    // no mutex, no coroutine, no frame of lag between finger and card.
                     val resistance = if (next == null) RUBBER_BAND else 1f
-                    scope.launch { slide.snapTo(travel.x * resistance) }
+                    setSlide(travel.x * resistance)
                 }
                 Axis.VERTICAL -> {
                     change.consume()
                     val progress = (travel.y / layDistance).coerceIn(-1f, 1f)
-                    scope.launch { upright.snapTo((1f - progress).coerceIn(0f, 1f)) }
+                    setUpright((1f - progress).coerceIn(0f, 1f))
                 }
                 Axis.UNDECIDED -> Unit
             }
@@ -358,8 +385,11 @@ private fun release(
     axis: Axis,
     travel: Offset,
     velocity: androidx.compose.ui.unit.Velocity,
-    slide: Animatable<Float, *>,
-    upright: Animatable<Float, *>,
+    slide: () -> Float,
+    setSlide: (Float) -> Unit,
+    upright: () -> Float,
+    setUpright: (Float) -> Unit,
+    setSettling: (Job?) -> Unit,
     width: Float,
     layDistance: Float,
     page: () -> KeyboardPage,
@@ -375,31 +405,36 @@ private fun release(
                 abs(velocity.x) > FLICK_PX_PER_SECOND ||
                     abs(travel.x) > width * COMMIT_FRACTION
                 )
-            scope.launch {
-                if (committed) {
+            setSettling(
+                scope.launch {
                     // Carried the rest of the way rather than cut, so the page arrives
                     // instead of appearing.
-                    val target = if (travel.x > 0) width else -width
-                    slide.animateTo(target, settle(), initialVelocity = velocity.x)
-                    onPage(next!!)
-                } else {
-                    slide.animateTo(0f, settle(), initialVelocity = velocity.x)
-                }
-                slide.snapTo(0f)
-                setIncoming(null)
-            }
+                    val target = if (!committed) 0f else if (travel.x > 0) width else -width
+                    animate(slide(), target, velocity.x, settle()) { value, _ -> setSlide(value) }
+                    if (committed) onPage(next!!)
+                    setSlide(0f)
+                    setIncoming(null)
+                },
+            )
         }
         Axis.VERTICAL -> {
             val down = velocity.y > FLICK_PX_PER_SECOND ||
                 (velocity.y > -FLICK_PX_PER_SECOND && travel.y > layDistance * COMMIT_FRACTION)
-            scope.launch {
-                upright.animateTo(if (down) 0f else 1f, settle(), initialVelocity = -velocity.y)
-                onOpenChange(!down)
-            }
+            setSettling(
+                scope.launch {
+                    val target = if (down) 0f else 1f
+                    animate(upright(), target, -velocity.y, settle()) { v, _ -> setUpright(v) }
+                    onOpenChange(!down)
+                },
+            )
         }
         Axis.UNDECIDED -> {
-            scope.launch { slide.animateTo(0f, settle()) }
-            setIncoming(null)
+            setSettling(
+                scope.launch {
+                    animate(slide(), 0f, 0f, settle()) { value, _ -> setSlide(value) }
+                    setIncoming(null)
+                },
+            )
         }
     }
 }

@@ -8,6 +8,26 @@ A dated record of what changed and when. Newest first. Times are local
 The Android port has its own docs (`android/README.md`, `android/docs/`); this section
 records what shipped and when, so the history is legible from the root of the project.
 
+### 2026-09-05 — v0.12.1: fix the crash that stopped the app starting
+
+- **v0.12.0 could not run.** `TypingAssistant(assets)` was a property initialiser, and
+  property initialisers run in the **constructor** — before `attachBaseContext` has given
+  the service its context. `ContextWrapper.getAssets()` dereferenced a null base and threw,
+  so the keyboard died the moment the system created it, which is the moment any text field
+  takes focus. The keyboard and the app share a process, so the app went down with it. It is
+  `lateinit` now, assigned in `onCreate`.
+- **A test that constructs each service.** `ServiceConstructionTest` does nothing but call
+  `new` on the keyboard, the bubble and the voice-input service. Every other test in the
+  tree takes construction for granted — the Compose tests build the panel, not the service
+  that hosts it — so nothing covered the one line of a service that runs before Android has
+  finished making it. It reproduced this crash before the fix.
+- **The card's drag no longer goes through a coroutine per pointer event.** The offsets were
+  `Animatable`s written with `snapTo` from a launched coroutine, which puts a mutex and a
+  scheduling hop between the finger and the card — on the one surface whose entire job is to
+  feel attached to it. They are plain float state written directly now; only the settle
+  animates, and a new touch cancels a settle in flight so a card can be caught mid-flight.
+- 289 tests, all green.
+
 ### 2026-09-05 — v0.12.0: a card you can push, and typing help that never leaves the phone
 
 - **The card follows the finger.** The previous version watched for a swipe and then played

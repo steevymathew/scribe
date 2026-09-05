@@ -63,8 +63,14 @@ class ScribeInputMethodService : InputMethodService() {
      * every rule reads the text that is actually in the field rather than trusting a memory
      * of what was typed, which is what keeps it right about a field the user has edited by
      * hand or dictated into.
+     *
+     * **`lateinit`, not a property initialiser, and that is not a style choice.** Property
+     * initialisers run in the *constructor*, before `attachBaseContext` has given the
+     * service its context — so reading `assets` there dereferences a null base and throws.
+     * The keyboard is constructed the moment a text field takes focus, and it shares a
+     * process with the app, so the app went down with it. See ServiceConstructionTest.
      */
-    private val typing = TypingAssistant(assets)
+    private lateinit var typing: TypingAssistant
     private val typingOptions = MutableStateFlow(
         TypingAssistant.Options(
             autoCapitalise = true,
@@ -78,6 +84,8 @@ class ScribeInputMethodService : InputMethodService() {
     override fun onCreate() {
         super.onCreate()
         host.onCreate()
+        // From here on there is a context. Nothing above this line may assume one.
+        typing = TypingAssistant(assets)
         engine = ScribeEngine.get(this)
         engine.warmUp()
         // Seeded synchronously so the *first* frame is the right height. Settings arrive
