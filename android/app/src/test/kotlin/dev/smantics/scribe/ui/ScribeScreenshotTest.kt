@@ -88,6 +88,7 @@ class ScribeScreenshotTest {
         override fun toggleMode() = Unit
         override fun setBoost(held: Boolean) = Unit
         override fun type(text: String) = Unit
+        override fun acceptSuggestion(word: String) = Unit
         override fun backspace() = Unit
         override fun deleteWord() = Unit
         override fun space() = Unit

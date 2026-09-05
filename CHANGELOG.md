@@ -8,6 +8,42 @@ A dated record of what changed and when. Newest first. Times are local
 The Android port has its own docs (`android/README.md`, `android/docs/`); this section
 records what shipped and when, so the history is legible from the root of the project.
 
+### 2026-09-05 — v0.12.0: a card you can push, and typing help that never leaves the phone
+
+- **The card follows the finger.** The previous version watched for a swipe and then played
+  a fixed animation, so nothing moved while the finger was moving and the card felt clunky
+  next to keys that react on touch-down. Everything is tracked one-to-one now: the pages sit
+  edge to edge and slide with the drag (never stacked, never cross-faded), the downward drag
+  tips the card away around its bottom edge degree by degree, and releasing hands the offset
+  to a spring carrying the finger's velocity — so a flick completes and a hesitant push falls
+  back, decided by where the card was going rather than by a threshold. Pulling toward a page
+  that does not exist meets resistance instead of blankness.
+- **Taking hold of the card by its edge.** Pressing and holding still on the left, right or
+  bottom border — longer than a key's long press, so the two do not race — gives a third,
+  heavier haptic, lights the card's edge and lifts it slightly. The gestures live on top of
+  each other, so the hand has to be told which one it got.
+- **Key preview**, off by default. It is the standard answer to a finger hiding its own
+  target and it is also the one thing that interrupts the calm of the card, so it is a
+  choice rather than a default.
+- **Typing help, entirely on-device.** Auto-capitalisation and smart punctuation (both on),
+  and completions and autocorrect (both off until asked for). The corrector weights a
+  substitution by *keyboard distance* rather than letter distance — `hekki` becomes `hello`
+  because `k` neighbours `l` — with frequency weighted heavily enough to outrank a closer
+  wrong answer, which two tests proved necessary: on raw distance `helo` becomes `hell` and
+  `teh` becomes `ten`.
+- **The privacy position is the point, and it is checkable.** All of it lives in `core` with
+  no Android imports and no I/O: the dictionary is a plain text file in the APK
+  (`assets/dict/en.txt`, 64,000 words, ~320 KB compressed), the user's own words come from
+  the vocabulary they already curate, and the corrector is stateless by construction — it
+  cannot accumulate a record of what was typed even if someone later wanted it to. Learning
+  from what you type is deliberately *not* built. The card that offers autocorrect says so
+  in the place where the user is deciding.
+- **The suggestion strip takes the line the status sits on**, because nobody types and
+  dictates at once — a permanent suggestion row would cost height on every screen for
+  something empty most of the time.
+- 286 tests, all green. `android/docs/OWNER-VERIFY.md` v0.12.0 — §2 and §4 each name numbers
+  that only a real thumb can settle.
+
 ### 2026-09-05 — v0.11.0: the mock-up, uniform keys, and typing that lands
 
 - **Typing felt imprecise because it was.** Characters committed on *release*, so a thumb

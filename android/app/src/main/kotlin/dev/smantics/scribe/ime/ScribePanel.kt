@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -72,6 +73,9 @@ interface PanelActions {
     fun toggleMode()
     fun setBoost(held: Boolean)
     fun type(text: String)
+
+    /** Replace the half-typed word with the completion the user picked. */
+    fun acceptSuggestion(word: String)
     fun backspace()
     fun deleteWord()
     fun space()
@@ -115,6 +119,10 @@ fun ScribePanel(
     split: Boolean = false,
     /** How much of the width the keyboard occupies. Also a setting. */
     widthFraction: Float = 1f,
+    /** Whether a pressed key floats a bubble above itself. Off unless asked for. */
+    keyPreview: Boolean = false,
+    /** Completions for the half-typed word, or empty. Shown where the status sits. */
+    suggestions: List<String> = emptyList(),
 ) {
     // The page is deliberately *not* remembered. Whether the keys are up is worth keeping
     // across appearances — that is `keysShown`, and it persists — but coming back to a
@@ -122,6 +130,9 @@ fun ScribePanel(
     // has lost its place. It always opens on the letters.
     var page by remember { mutableStateOf(KeyboardPage.LETTERS) }
     var shift by remember { mutableStateOf(ShiftState.OFF) }
+    // Shared with the card: a key commits on touch-down, and if the gesture turns out to be
+    // a drag of the card the key takes its character back.
+    val arbiter = remember { SwipeArbiter() }
     LaunchedEffect(keysShown) { if (!keysShown) page = KeyboardPage.LETTERS }
 
     val dictating = state.stage != DictationStage.IDLE
@@ -141,7 +152,7 @@ fun ScribePanel(
             if (state.status == DictationStatus.NEEDS_PERMISSION) {
                 PermissionRow(onOpenApp = actions::openApp)
             } else {
-                VoiceStrip(state, actions)
+                VoiceStrip(state, actions, suggestions)
 
                 AnimatedVisibility(
                     visible = dictating,
@@ -164,12 +175,22 @@ fun ScribePanel(
             // version hid them the moment dictation started, which meant the panel jumped
             // every time the microphone was pressed and the choice never stuck — if they
             // were up they stay up, and the transcript appears above them.
-            LayingCard(open = keysShown, onShow = onToggleKeys) {
-                KeysCard(
-                    page = page,
+            KeysCardStack(
+                page = page,
+                open = keysShown,
+                onPage = { next ->
+                    page = next
+                    shift = ShiftState.OFF
+                },
+                onOpenChange = { wanted -> if (wanted != keysShown) onToggleKeys() },
+                onDragClaimed = { arbiter.swipes++ },
+            ) { shown ->
+                KeyboardPageContent(
+                    page = shown,
                     shift = shift,
                     split = split,
                     actions = actions,
+                    arbiter = arbiter,
                     onPage = { next ->
                         page = next
                         shift = ShiftState.OFF
@@ -181,72 +202,17 @@ fun ScribePanel(
                             ShiftState.LOCKED -> ShiftState.OFF
                         }
                     },
-                    onHide = onToggleKeys,
                     onTypedCharacter = {
                         // One-shot shift releases after a single letter, as every other
                         // keyboard behaves. Caps lock does not.
                         if (shift == ShiftState.ONCE) shift = ShiftState.OFF
                     },
+                    keyPreview = keyPreview,
                 )
             }
         }
     }
 }
-
-/**
- * The keys, laid face down and propped back up.
- *
- * Swiping the keyboard away tips the card forward until you are looking at its edge, and
- * swiping up stands it back on its face. The rotation is around the *bottom* edge, which is
- * what makes it read as a hinge rather than a spin, and the container's height is
- * interpolated in step so the app behind moves with the card instead of jumping when it
- * finishes.
- *
- * The edge is a real control: it takes the swipe up and a tap, and it is drawn as the same
- * slab seen side-on, so what is left behind is recognisably the thing that went away rather
- * than a stray bar.
- */
-@Composable
-private fun LayingCard(
-    open: Boolean,
-    onShow: () -> Unit,
-    content: @Composable () -> Unit,
-) {
-    val openness by animateFloatAsState(
-        targetValue = if (open) 1f else 0f,
-        animationSpec = tween(CARD_FLIP_MS),
-        label = "keys-openness",
-    )
-    val full = KeyMetrics.keysHeight + KeyMetrics.cardPadding * 2
-    val height = KeyMetrics.edgeHeight + (full - KeyMetrics.edgeHeight) * openness
-
-    Box(Modifier.fillMaxWidth().height(height), contentAlignment = Alignment.BottomCenter) {
-        // The edge is underneath the whole time and simply stops being covered, so there is
-        // no moment where neither is on screen.
-        KeysGrabber(onShow = onShow)
-        if (openness > 0.01f) {
-            Box(
-                Modifier.graphicsLayer {
-                    // Tipped forward from the bottom edge. Past about eighty degrees the
-                    // face is edge-on and there is nothing left to see, so that is where
-                    // the closed state sits.
-                    rotationX = -CARD_FLIP_DEGREES * (1f - openness)
-                    transformOrigin = TransformOrigin(0.5f, 1f)
-                    // Without a camera distance the projection is extreme enough to look
-                    // like the card is being crushed rather than tilted.
-                    cameraDistance = 14f * density
-                    alpha = openness
-                },
-            ) {
-                content()
-            }
-        }
-    }
-}
-
-/** Long enough to see the card move, short enough not to delay the next keystroke. */
-private const val CARD_FLIP_MS = 260
-private const val CARD_FLIP_DEGREES = 82f
 
 /**
  * The dictation controls: the way into Scribe, the waveform, the mode, and the one big
@@ -258,7 +224,11 @@ private const val CARD_FLIP_DEGREES = 82f
  * like a puzzle; the button that started the recording is the button that finishes it.
  */
 @Composable
-private fun VoiceStrip(state: EngineState, actions: PanelActions) {
+private fun VoiceStrip(
+    state: EngineState,
+    actions: PanelActions,
+    suggestions: List<String>,
+) {
     val haptics = rememberKeyHaptics()
     val toggleFirst = LocalHandedness.current == Handedness.LEFT
     val busy = state.stage != DictationStage.IDLE
@@ -311,15 +281,52 @@ private fun VoiceStrip(state: EngineState, actions: PanelActions) {
             MicToggle(state) { haptics(); actions.toggleDictation() }
         }
 
-        // Status sits under the strip, not beside it: the strip is already several controls
-        // wide on a cover screen, and an error must never be what gets truncated.
+        // One line under the strip, doing two jobs that never happen at once: completions
+        // while typing, and what Scribe is doing when it is not. Nobody types and talks
+        // simultaneously, so the row does not need to be shared — it needs to be swapped.
+        // The alternative was a permanent suggestion row, which costs height on every
+        // screen for something that is empty most of the time.
         if (!busy) {
-            Text(
-                text = state.statusDetail,
-                color = if (state.error != null) ScribeTokens.rec else ScribeTokens.faint,
-                fontSize = 11.sp,
-                modifier = Modifier.padding(start = 8.dp).testTag("status-detail"),
-            )
+            if (suggestions.isNotEmpty()) {
+                SuggestionStrip(suggestions, actions::acceptSuggestion)
+            } else {
+                Text(
+                    text = state.statusDetail,
+                    color = if (state.error != null) ScribeTokens.rec else ScribeTokens.faint,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(start = 8.dp).testTag("status-detail"),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Completions for the word being typed, in the line where the status usually sits.
+ *
+ * Three at most. A strip of five is a strip nobody reads: the eye takes the first, glances
+ * at the second, and the rest are width spent on nothing.
+ */
+@Composable
+private fun SuggestionStrip(words: List<String>, onAccept: (String) -> Unit) {
+    val haptics = rememberKeyHaptics()
+    Row(
+        Modifier.fillMaxWidth().height(22.dp).testTag("suggestions"),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        words.forEach { word ->
+            Box(
+                Modifier
+                    .testTag("suggestion-$word")
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .semantics { contentDescription = "Use $word" }
+                    .clickable { haptics(); onAccept(word) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(word, color = ScribeTokens.muted, fontSize = 13.sp)
+            }
         }
     }
 }

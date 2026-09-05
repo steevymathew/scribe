@@ -128,6 +128,7 @@ fun HomeScreen(
             )
             ModeCard(config) { engine.toggleMode() }
             KeyboardCard(config) { update -> scope.launch { engine.settings.update(update) } }
+            TypingCard(config) { update -> scope.launch { engine.settings.update(update) } }
             SpeedAdviceCard(engine, config, onOpenModels)
         }
     }
@@ -525,6 +526,59 @@ private fun KeyboardCard(config: ScribeConfig, onUpdate: ((ScribeConfig) -> Scri
             selected = config.keyboardWidth,
             testTag = "keyboard-width",
         ) { choice -> onUpdate { it.copy(keyboardWidth = choice) } }
+        ToggleRow(
+            title = "Show the key you're pressing",
+            body = "A bubble above your thumb, so you can see what you hit. Off by " +
+                "default — it's useful, and it does interrupt the look of the keyboard.",
+            checked = config.keyPreview,
+        ) { on -> onUpdate { it.copy(keyPreview = on) } }
+    }
+}
+
+/**
+ * The typing help, and a plain statement of where it happens.
+ *
+ * The statement is not decoration. Autocorrect is the one feature in this app that could
+ * plausibly be assumed to phone home — every keyboard people have used does — so the card
+ * that offers it says, in the place where they are deciding, that it does not. The claim is
+ * checkable: the dictionary is a text file in the APK, and the network ledger on the History
+ * screen lists every request Scribe has ever made.
+ */
+@Composable
+private fun TypingCard(config: ScribeConfig, onUpdate: ((ScribeConfig) -> ScribeConfig) -> Unit) {
+    ScribeCard(testTag = "typing-card") {
+        SectionLabel("TYPING HELP")
+        Text(
+            "All of this runs on your phone, from a word list inside the app and the words " +
+                "you add yourself. Nothing you type is uploaded, and nothing is remembered " +
+                "between sentences.",
+            color = ScribeTokens.muted,
+            fontSize = 13.sp,
+        )
+        ToggleRow(
+            title = "Capitals",
+            body = "A capital at the start of a sentence.",
+            checked = config.autoCapitalise,
+        ) { on -> onUpdate { it.copy(autoCapitalise = on) } }
+        ToggleRow(
+            title = "Smart punctuation",
+            body = "Two spaces make a full stop, and a comma typed after a space moves " +
+                "back where it belongs.",
+            checked = config.smartPunctuation,
+        ) { on -> onUpdate { it.copy(smartPunctuation = on) } }
+        ToggleRow(
+            title = "Suggestions",
+            body = "Completions for the word you're typing, offered where the status " +
+                "line sits. Your own words come first.",
+            checked = config.suggestions,
+        ) { on -> onUpdate { it.copy(suggestions = on) } }
+        ToggleRow(
+            title = "Autocorrect",
+            body = "Fix a mistyped word when you press space. Off by default: a keyboard " +
+                "that changes a word you meant is worse than one that leaves a typo. " +
+                "Words you've added under Words and shortcuts are never corrected.",
+            checked = config.autocorrect,
+        ) { on -> onUpdate { it.copy(autocorrect = on) } }
     }
 }
 

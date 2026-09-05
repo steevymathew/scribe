@@ -104,6 +104,35 @@ data class ScribeConfig(
      * blindly through three values with no way to see which one you were on.
      */
     val keyboardWidth: KeyboardWidth = KeyboardWidth.FULL,
+
+    /**
+     * A bubble above the key under your thumb.
+     *
+     * **Off by default**, and that is a considered choice rather than caution: it is the
+     * standard answer to a finger hiding its own target, and it is also the one thing on
+     * this keyboard that interrupts the calm of the card. Somebody who wants it will find
+     * it; somebody who does not should never have to turn it off.
+     */
+    val keyPreview: Boolean = false,
+
+    /** A capital at the start of a sentence. On: nearly everybody wants this. */
+    val autoCapitalise: Boolean = true,
+
+    /** Double space for a full stop, and punctuation that clings to the word before it. */
+    val smartPunctuation: Boolean = true,
+
+    /**
+     * Fix a mistyped word when the space lands.
+     *
+     * Off by default. A corrector that changes a word you meant is the most irritating
+     * thing a keyboard can do, and the user should meet that behaviour because they asked
+     * for it. Everything it uses is on the phone — the shipped dictionary and the words in
+     * [dictionary] below — and nothing it does is written down.
+     */
+    val autocorrect: Boolean = false,
+
+    /** Offer completions above the keys while typing. */
+    val suggestions: Boolean = false,
     val bubbleEnabled: Boolean = false,
 
     // Onboarding
@@ -265,6 +294,11 @@ class SettingsRepository(private val context: Context) {
             prefs[K_KEYS_SHOWN] = next.keyboardShown
             prefs[K_KB_SPLIT] = next.keyboardSplit.name
             prefs[K_KB_WIDTH] = next.keyboardWidth.name
+            prefs[K_KEY_PREVIEW] = next.keyPreview
+            prefs[K_AUTO_CAPS] = next.autoCapitalise
+            prefs[K_SMART_PUNCT] = next.smartPunctuation
+            prefs[K_AUTOCORRECT] = next.autocorrect
+            prefs[K_SUGGESTIONS] = next.suggestions
             prefs[K_HANDEDNESS] = next.handedness.name
             prefs[K_BUBBLE] = next.bubbleEnabled
             prefs[K_ONBOARDED] = next.onboardingComplete
@@ -305,6 +339,11 @@ class SettingsRepository(private val context: Context) {
             keyboardWidth = this[K_KB_WIDTH]?.let {
                 runCatching { KeyboardWidth.valueOf(it) }.getOrNull()
             } ?: defaults.keyboardWidth,
+            keyPreview = this[K_KEY_PREVIEW] ?: defaults.keyPreview,
+            autoCapitalise = this[K_AUTO_CAPS] ?: defaults.autoCapitalise,
+            smartPunctuation = this[K_SMART_PUNCT] ?: defaults.smartPunctuation,
+            autocorrect = this[K_AUTOCORRECT] ?: defaults.autocorrect,
+            suggestions = this[K_SUGGESTIONS] ?: defaults.suggestions,
             handedness = this[K_HANDEDNESS]?.let {
                 runCatching { Handedness.valueOf(it) }.getOrNull()
             } ?: defaults.handedness,
@@ -347,6 +386,11 @@ class SettingsRepository(private val context: Context) {
         val K_KEYS_SHOWN = booleanPreferencesKey("keyboard_shown")
         val K_KB_SPLIT = stringPreferencesKey("keyboard_split")
         val K_KB_WIDTH = stringPreferencesKey("keyboard_width")
+        val K_KEY_PREVIEW = booleanPreferencesKey("key_preview")
+        val K_AUTO_CAPS = booleanPreferencesKey("auto_capitalise")
+        val K_SMART_PUNCT = booleanPreferencesKey("smart_punctuation")
+        val K_AUTOCORRECT = booleanPreferencesKey("autocorrect")
+        val K_SUGGESTIONS = booleanPreferencesKey("suggestions")
         val K_HANDEDNESS = stringPreferencesKey("handedness")
         val K_BUBBLE = booleanPreferencesKey("bubble_enabled")
         val K_ONBOARDED = booleanPreferencesKey("onboarding_complete")

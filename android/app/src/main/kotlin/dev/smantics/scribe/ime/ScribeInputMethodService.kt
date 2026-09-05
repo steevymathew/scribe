@@ -56,6 +56,25 @@ class ScribeInputMethodService : InputMethodService() {
 
     private val sink = InputConnectionSink { currentInputConnection }
 
+    /**
+     * Capitals, punctuation, completions and corrections — all of it on this phone.
+     *
+     * Owned by the service rather than the panel because it needs the `InputConnection`:
+     * every rule reads the text that is actually in the field rather than trusting a memory
+     * of what was typed, which is what keeps it right about a field the user has edited by
+     * hand or dictated into.
+     */
+    private val typing = TypingAssistant(assets)
+    private val typingOptions = MutableStateFlow(
+        TypingAssistant.Options(
+            autoCapitalise = true,
+            smartPunctuation = true,
+            autocorrect = false,
+            suggestions = false,
+        ),
+    )
+    private val keyPreview = MutableStateFlow(false)
+
     override fun onCreate() {
         super.onCreate()
         host.onCreate()
@@ -71,12 +90,24 @@ class ScribeInputMethodService : InputMethodService() {
             splitMode.value = it.split
             keyboardWidth.value = it.width
         }
+        typing.warmUp()
         scope.launch {
             engine.settings.config.collect {
                 handedness.value = it.handedness
                 keysShown.value = it.keyboardShown
                 splitMode.value = it.keyboardSplit
                 keyboardWidth.value = it.keyboardWidth
+                keyPreview.value = it.keyPreview
+                typingOptions.value = TypingAssistant.Options(
+                    autoCapitalise = it.autoCapitalise,
+                    smartPunctuation = it.smartPunctuation,
+                    autocorrect = it.autocorrect,
+                    suggestions = it.suggestions,
+                )
+                // The words the user curates in Settings are never corrected and are
+                // offered first. This is the only vocabulary Scribe has beyond the fixed
+                // list in the APK, and the user can read and edit all of it.
+                typing.setUserWords(it.dictionary, it.snippets)
             }
         }
     }
@@ -110,6 +141,8 @@ class ScribeInputMethodService : InputMethodService() {
                     val keys by keysShown.collectAsState()
                     val mode by splitMode.collectAsState()
                     val width by keyboardWidth.collectAsState()
+                    val preview by keyPreview.collectAsState()
+                    val words by typing.suggestions.collectAsState()
                     val wide = resources.configuration.screenWidthDp >= SPLIT_WIDTH_DP
                     ScribeTheme(handedness = hand) {
                         ScribePanel(
@@ -129,6 +162,8 @@ class ScribeInputMethodService : InputMethodService() {
                                 SplitMode.AUTO -> wide
                             },
                             widthFraction = width.fraction,
+                            keyPreview = preview,
+                            suggestions = words,
                         )
                     }
                 }
@@ -196,10 +231,13 @@ class ScribeInputMethodService : InputMethodService() {
         // used for one thing: choosing a tone profile. Nothing about the field's contents
         // is inspected, and nothing leaves the device.
         engine.attach(sink, info?.packageName)
+        // A fresh field: whatever was being offered belonged to the last one.
+        typing.refresh(currentInputConnection, typingOptions.value)
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        typing.clear()
         // Abandon any decode in flight. The user has moved on; making them wait for a
         // transcript they will never see would only cost battery.
         engine.detach()
@@ -250,11 +288,18 @@ class ScribeInputMethodService : InputMethodService() {
         override fun setBoost(held: Boolean) = engine.setBoost(held)
 
         override fun type(text: String) {
-            currentInputConnection?.commitText(text, 1)
+            val ic = currentInputConnection ?: return
+            typing.type(ic, text, typingOptions.value)
+        }
+
+        override fun acceptSuggestion(word: String) {
+            val ic = currentInputConnection ?: return
+            typing.accept(ic, word, typingOptions.value)
         }
 
         override fun backspace() {
             currentInputConnection?.deleteSurroundingText(1, 0)
+            typing.refresh(currentInputConnection, typingOptions.value)
         }
 
         /**
@@ -277,10 +322,12 @@ class ScribeInputMethodService : InputMethodService() {
 
             val count = (before.length - start).coerceAtLeast(1)
             ic.deleteSurroundingText(count, 0)
+            typing.refresh(ic, typingOptions.value)
         }
 
         override fun space() {
-            currentInputConnection?.commitText(" ", 1)
+            val ic = currentInputConnection ?: return
+            typing.type(ic, " ", typingOptions.value)
         }
 
         /**

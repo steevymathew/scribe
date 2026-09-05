@@ -514,3 +514,74 @@ Autocorrect, suggestions, auto-capitalisation, clipboard, themes and glide typin
 written up in the vault as `Scribe — Keyboard Plan` with an order to build them in. §4 of
 that note has three questions only you can answer, the sharpest being **whether the voice
 strip should become the suggestion strip while typing** — it is the only row available.
+
+---
+
+# v0.12.0 — a card you can actually push, and typing help that never leaves the phone
+
+## 1 · The card follows your finger
+
+The old version watched for a swipe and then played a fixed animation, which is why it felt
+clunky next to keys that react on touch-down. Everything is tracked one-to-one now.
+
+- [ ] Drag the keyboard sideways **slowly**. The page should move exactly as far as your
+      finger, and the next page should come into view beside it as you pull — never on top
+      of it, never a cross-fade.
+- [ ] Stop half way and hold. It should sit there under your finger.
+- [ ] Let go half way without speed: it falls back. Let go with a flick: it completes.
+      **Both should feel like they were decided by where the card was going, not by a rule.**
+- [ ] Drag toward a page that does not exist (right from symbols, left from emoji). It should
+      resist and spring back rather than sliding into blankness.
+- [ ] Drag the keyboard **down**. It should tip away from you around its bottom edge, degree
+      by degree with your finger, and the app behind should move with it the whole way.
+- [ ] Push it half way down and let go: it stands back up.
+- [ ] Is the spring right — too loose, too stiff, or about right? One constant.
+
+## 2 · Taking hold of the card by its edge
+
+- [ ] Press and **hold still** on the left, right, or bottom border of the card — the strip
+      outside the keys, where the little chevrons are.
+- [ ] After a beat you should get a **noticeably heavier buzz** than a keypress or a
+      word-delete, and the card's edge should light up teal and lift very slightly.
+- [ ] Once grabbed, dragging swings the card that way without needing to build up travel.
+- [ ] Pressing a key should never trigger it, and neither should a thumb passing over the
+      frame on the way to a key.
+- [ ] **Two numbers to tune**: the hold is 620 ms and the band is 16 dp wide. Too eager? Too
+      slow? Too easy to miss? Tell me which way.
+
+## 3 · Key preview — off by default
+
+- [ ] Scribe → **KEYBOARD** card → "Show the key you're pressing". Off unless you turn it on.
+- [ ] With it on, a bubble appears above the key under your thumb, clear of your finger.
+- [ ] With it off, nothing changes about the keyboard.
+
+## 4 · Typing help — all of it on the phone
+
+Scribe → **TYPING HELP**. Four separate switches, because they are separately opinionated.
+
+- [ ] **Capitals** (on by default): a capital after `. `, `? ` and `! `, and at the start of
+      an empty field. It should *not* capitalise straight after typing the full stop —
+      only once you have spaced.
+- [ ] **Smart punctuation** (on by default): two spaces after a word become `. `. A comma
+      typed after a space moves back against the word.
+- [ ] **Suggestions** (off by default): completions appear on the line where "Ready" sits,
+      because you are never typing and dictating at once. Tapping one replaces the
+      half-typed word and adds a space.
+- [ ] **Autocorrect** (off by default): `helo` → `hello`, `teh` → `the` when you press space.
+      **The important test is the false positives** — type a few names, some jargon, and some
+      deliberate abbreviations and see whether it leaves them alone. Correcting a word you
+      meant is much worse than missing a typo, and the thresholds are set assuming that.
+- [ ] Add a word under *Words and shortcuts* and confirm autocorrect never touches it, and
+      that suggestions offer it first.
+- [ ] With everything on, does typing feel faster or noisier?
+
+**The claim on that card is that none of this leaves the phone.** It is checkable: the
+dictionary is a plain text file inside the APK (`assets/dict/en.txt`, 64,000 words), and
+Settings → History and network still lists every request Scribe has ever made. That list
+should stay empty unless you download a model.
+
+## 5 · Nothing else moved
+
+- [ ] Typing precision from v0.11.0 is unchanged — keys still commit on touch-down.
+- [ ] Starting a swipe from a letter still types it and then takes it back.
+- [ ] The keyboard's height still does not change between pages.

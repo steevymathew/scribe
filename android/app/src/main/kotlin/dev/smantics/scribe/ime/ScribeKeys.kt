@@ -43,10 +43,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.smantics.scribe.ui.components.Glyph
@@ -104,7 +107,7 @@ object KeyMetrics {
  * its character back — the gesture *became* something else, so the tentative letter is
  * retracted rather than left behind.
  */
-private class SwipeArbiter {
+class SwipeArbiter {
     var swipes: Int = 0
 }
 
@@ -125,131 +128,53 @@ private class SwipeArbiter {
  * over there" true rather than merely claimed.
  */
 @Composable
-fun KeysCard(
+fun KeyboardPageContent(
     page: KeyboardPage,
     shift: ShiftState,
     split: Boolean,
     actions: PanelActions,
+    arbiter: SwipeArbiter,
     onPage: (KeyboardPage) -> Unit,
     onShift: () -> Unit,
-    onHide: () -> Unit,
     onTypedCharacter: () -> Unit,
+    keyPreview: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val haptics = rememberKeyHaptics()
-    val arbiter = remember { SwipeArbiter() }
 
-    Box(
-        modifier
-            .testTag("keys-card")
-            .fillMaxWidth()
-            .height(KeyMetrics.keysHeight + KeyMetrics.cardPadding * 2)
-            .neuKey(
-                shape = RoundedCornerShape(ScribeTokens.radius),
-                pressed = false,
-                surface = ScribeTokens.s0,
-            )
-            .border(1.dp, ScribeTokens.stroke, RoundedCornerShape(ScribeTokens.radius))
-            .padding(KeyMetrics.cardPadding)
-            .pageGestures(
-                page = page,
-                arbiter = arbiter,
-                onPage = { next -> haptics(); onPage(next) },
-                onHide = { haptics(); onHide() },
-            ),
+    Column(
+        modifier.fillMaxSize().padding(KeyMetrics.cardPadding),
+        verticalArrangement = Arrangement.spacedBy(KeyMetrics.rowGap),
     ) {
-        // The page slides in from the side it was pulled from. Anything else and a swipe
-        // is a cut, which reads as the keyboard being replaced rather than moved.
-        AnimatedContent(
-            targetState = page,
-            transitionSpec = {
-                val forward = targetState.ordinal > initialState.ordinal
-                val entering: (Int) -> Int = { if (forward) it else -it }
-                val leaving: (Int) -> Int = { if (forward) -it else it }
-                (slideInHorizontally(tween(PAGE_SLIDE_MS), entering) + fadeIn(tween(PAGE_SLIDE_MS)))
-                    .togetherWith(
-                        slideOutHorizontally(tween(PAGE_SLIDE_MS), leaving) +
-                            fadeOut(tween(PAGE_SLIDE_MS)),
-                    )
-                    .using(SizeTransform(clip = false))
-            },
-            label = "keyboard-page",
-        ) { shown ->
-            Column(
-                Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(KeyMetrics.rowGap),
-            ) {
-                if (shown == KeyboardPage.EMOJI) {
-                    EmojiPage(onEmoji = { haptics(); actions.type(it); onTypedCharacter() })
-                } else {
-                    Keys(
-                        page = shown,
-                        shift = shift,
-                        split = split,
-                        actions = actions,
-                        arbiter = arbiter,
-                        onPage = onPage,
-                        onShift = onShift,
-                        onTypedCharacter = onTypedCharacter,
-                    )
-                }
-                // The bottom row is on every page, emoji included: it is the way back, and
-                // a page you can only leave by knowing a gesture is a page you get stuck on.
-                KeyRow(
-                    keys = KeyboardLayout.bottomRow,
-                    page = shown,
-                    shift = shift,
-                    split = false,
-                    actions = actions,
-                    arbiter = arbiter,
-                    onPage = onPage,
-                    onShift = onShift,
-                    onTypedCharacter = onTypedCharacter,
-                )
-            }
+        if (page == KeyboardPage.EMOJI) {
+            EmojiPage(onEmoji = { haptics(); actions.type(it); onTypedCharacter() })
+        } else {
+            Keys(
+                page = page,
+                shift = shift,
+                split = split,
+                actions = actions,
+                arbiter = arbiter,
+                onPage = onPage,
+                onShift = onShift,
+                onTypedCharacter = onTypedCharacter,
+                keyPreview = keyPreview,
+            )
         }
-        PageHint(page, Modifier.align(Alignment.CenterStart), toLeft = true)
-        PageHint(page, Modifier.align(Alignment.CenterEnd), toLeft = false)
-    }
-}
-
-/**
- * The swipes that move between pages and put the keys away.
- *
- * Decided the moment the travel passes the threshold rather than at the end of the drag,
- * so the key that fired on touch-down can take its character back while the finger is
- * still moving. The axis with the larger travel wins, so a diagonal does one thing.
- */
-private fun Modifier.pageGestures(
-    page: KeyboardPage,
-    arbiter: SwipeArbiter,
-    onPage: (KeyboardPage) -> Unit,
-    onHide: () -> Unit,
-): Modifier = this.pointerInput(page) {
-    var travel = Offset.Zero
-    var fired = false
-    detectDragGestures(
-        onDragStart = { travel = Offset.Zero; fired = false },
-        onDragCancel = { travel = Offset.Zero; fired = false },
-        onDragEnd = { travel = Offset.Zero; fired = false },
-    ) { change, amount ->
-        travel += amount
-        change.consume()
-        if (!fired) {
-            val dx = travel.x
-            val dy = travel.y
-            if (abs(dy) > abs(dx) && dy > SWIPE_THRESHOLD_PX) {
-                fired = true
-                arbiter.swipes++
-                onHide()
-            } else if (abs(dx) > abs(dy) && abs(dx) > SWIPE_THRESHOLD_PX) {
-                // A swipe with nowhere to go still counts: the letter typed on the way
-                // past comes back whether or not the page changes.
-                fired = true
-                arbiter.swipes++
-                (if (dx > 0) page.right() else page.left())?.let(onPage)
-            }
-        }
+        // The bottom row is on every page, emoji included: it is the way back, and a page
+        // you can only leave by knowing a gesture is a page you get stuck on.
+        KeyRow(
+            keys = KeyboardLayout.bottomRow,
+            page = page,
+            shift = shift,
+            split = false,
+            actions = actions,
+            arbiter = arbiter,
+            onPage = onPage,
+            onShift = onShift,
+            onTypedCharacter = onTypedCharacter,
+            keyPreview = keyPreview,
+        )
     }
 }
 
@@ -259,14 +184,17 @@ private fun Modifier.pageGestures(
  * Deliberately at the very bottom of the visible range. It has to be findable by someone
  * looking for a way out and ignorable by everyone else; a hint loud enough to notice while
  * typing is a hint that has become decoration.
+ *
+ * It also marks the band where a press and hold takes hold of the whole card, which is the
+ * only sign that gesture exists — so it sits exactly where the grab does.
  */
 @Composable
-private fun BoxScope.PageHint(page: KeyboardPage, modifier: Modifier, toLeft: Boolean) {
+fun PageHint(page: KeyboardPage, toLeft: Boolean, modifier: Modifier = Modifier) {
     val target = (if (toLeft) page.left() else page.right()) ?: return
     Box(
         modifier
             .testTag(if (toLeft) "hint-left" else "hint-right")
-            .size(width = 10.dp, height = 34.dp)
+            .size(width = 12.dp, height = 36.dp)
             .semantics {
                 contentDescription = when (target) {
                     KeyboardPage.EMOJI -> "Swipe for emoji"
@@ -342,6 +270,7 @@ private fun ColumnScope.Keys(
     onPage: (KeyboardPage) -> Unit,
     onShift: () -> Unit,
     onTypedCharacter: () -> Unit,
+    keyPreview: Boolean,
 ) {
     // The number row is on the letters *and* the symbols page. Digits are typed often
     // enough to deserve a permanent target, and sharing the row is what keeps the two
@@ -356,6 +285,7 @@ private fun ColumnScope.Keys(
         onPage = onPage,
         onShift = onShift,
         onTypedCharacter = onTypedCharacter,
+        keyPreview = keyPreview,
     )
 
     val rows = KeyboardLayout.rowsFor(page, shift)
@@ -376,6 +306,7 @@ private fun ColumnScope.Keys(
             onPage = onPage,
             onShift = onShift,
             onTypedCharacter = onTypedCharacter,
+            keyPreview = keyPreview,
         )
     }
 }
@@ -391,6 +322,7 @@ private fun KeyRow(
     onPage: (KeyboardPage) -> Unit,
     onShift: () -> Unit,
     onTypedCharacter: () -> Unit,
+    keyPreview: Boolean,
     leading: Key? = null,
     trailing: Key? = null,
 ) {
@@ -413,6 +345,7 @@ private fun KeyRow(
                 onPage = onPage,
                 onShift = onShift,
                 onTypedCharacter = onTypedCharacter,
+                keyPreview = keyPreview,
             )
         }
 
@@ -452,6 +385,7 @@ private fun RowScope.KeyButton(
     onPage: (KeyboardPage) -> Unit,
     onShift: () -> Unit,
     onTypedCharacter: () -> Unit,
+    keyPreview: Boolean,
 ) {
     var pressed by remember { mutableStateOf(false) }
     val haptics = rememberKeyHaptics()
@@ -590,6 +524,12 @@ private fun RowScope.KeyButton(
             },
         contentAlignment = Alignment.Center,
     ) {
+        // The bubble above the key your thumb is covering. Off unless asked for: it is the
+        // standard answer to a finger hiding its own target, and it is also the one thing
+        // on this keyboard that interrupts the calm of the card, so it is a choice.
+        if (keyPreview && pressed && key is Key.Char) {
+            KeyPreview(KeyboardLayout.textFor(key, page, shift))
+        }
         val secondary = (key as? Key.Char)?.secondary
         if (secondary != null && page != KeyboardPage.SYMBOLS) {
             Text(
@@ -627,6 +567,44 @@ private fun RowScope.KeyButton(
         }
     }
 }
+
+/**
+ * The character being typed, floated above the key that is under a thumb.
+ *
+ * Drawn in a `Popup` rather than in the row, because anything inside the row is clipped by
+ * it — the whole value of this is that it appears *above* the key, in the one place the
+ * finger is not.
+ */
+@Composable
+private fun KeyPreview(label: String) {
+    Popup(
+        alignment = Alignment.TopCenter,
+        offset = IntOffset(0, PREVIEW_OFFSET_PX),
+        properties = PopupProperties(focusable = false, clippingEnabled = false),
+    ) {
+        Box(
+            Modifier
+                .testTag("key-preview")
+                .size(width = 46.dp, height = 52.dp)
+                .neuKey(
+                    shape = RoundedCornerShape(KeyMetrics.keyRadius),
+                    pressed = false,
+                    surface = ScribeTokens.s1h,
+                )
+                .border(
+                    1.dp,
+                    ScribeTokens.stroke2,
+                    RoundedCornerShape(KeyMetrics.keyRadius),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(label, color = ScribeTokens.text, fontSize = 26.sp)
+        }
+    }
+}
+
+/** Far enough above the key to clear a fingertip, in pixels because a Popup wants them. */
+private const val PREVIEW_OFFSET_PX = -150
 
 /**
  * A short tick of haptic feedback for every press.
@@ -672,6 +650,40 @@ fun rememberDeleteHaptics(): () -> Unit {
                 HapticFeedbackConstants.LONG_PRESS,
                 HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING,
             )
+            Unit
+        }
+    }
+}
+
+/**
+ * The heaviest of the three, for taking hold of the whole card by its edge.
+ *
+ * Three levels, and they have to be distinguishable through a fingertip without looking:
+ * a keypress tick, a heavier thump for deleting a word or reaching a shoulder symbol, and
+ * this — a double beat that says *you have the card, not a key*. The gestures live on top of
+ * each other, so the hand has to be told which one it got.
+ *
+ * `CONFIRM` is the system's own "that landed" effect and is noticeably weightier than
+ * `LONG_PRESS`; on a device that does not implement it the fallback below still fires, so
+ * the grab is never silent.
+ */
+@Composable
+fun rememberGrabHaptics(): () -> Unit {
+    val view = LocalView.current
+    return remember(view) {
+        {
+            @Suppress("DEPRECATION")
+            val confirmed = view.performHapticFeedback(
+                HapticFeedbackConstants.CONFIRM,
+                HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING,
+            )
+            if (!confirmed) {
+                @Suppress("DEPRECATION")
+                view.performHapticFeedback(
+                    HapticFeedbackConstants.LONG_PRESS,
+                    HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING,
+                )
+            }
             Unit
         }
     }

@@ -58,6 +58,7 @@ class ScribePanelTest {
         override fun toggleMode() { calls += "toggle" }
         override fun setBoost(held: Boolean) { calls += "boost:$held" }
         override fun type(text: String) { calls += "type:$text" }
+        override fun acceptSuggestion(word: String) { calls += "accept:$word" }
         override fun backspace() { calls += "backspace" }
         override fun deleteWord() { calls += "deleteWord" }
         override fun space() { calls += "space" }
@@ -81,6 +82,8 @@ class ScribePanelTest {
         state: EngineState = EngineState(status = DictationStatus.READY, statusDetail = "Ready"),
         actions: PanelActions = RecordingActions(),
         keysShown: Boolean = false,
+        keyPreview: Boolean = false,
+        suggestions: List<String> = emptyList(),
     ) {
         compose.setContent {
             var keys by remember { mutableStateOf(keysShown) }
@@ -93,6 +96,8 @@ class ScribePanelTest {
                     keysShown = keys,
                     onToggleKeys = { keys = !keys },
                     modifier = Modifier.width(412.dp),
+                    keyPreview = keyPreview,
+                    suggestions = suggestions,
                 )
             }
         }
@@ -471,6 +476,53 @@ class ScribePanelTest {
         )
         compose.onNodeWithTag("voice-cancel").performClick()
         assertEquals(listOf("cancel"), actions.calls)
+    }
+
+    // -------------------------------------------------------------- suggestions
+
+    /**
+     * The strip and the status share one line because they never happen at once — nobody
+     * types and dictates simultaneously — and a permanent suggestion row would cost height
+     * on every screen for something that is empty most of the time.
+     */
+    @Test fun `suggestions take the line the status usually has`() {
+        panel(suggestions = listOf("hello", "help", "held"))
+        compose.onNodeWithTag("suggestions").assertIsDisplayed()
+        compose.onNodeWithTag("status-detail").assertDoesNotExist()
+    }
+
+    @Test fun `the status comes back when there is nothing to suggest`() {
+        panel()
+        compose.onNodeWithTag("status-detail").assertIsDisplayed()
+        compose.onNodeWithTag("suggestions").assertDoesNotExist()
+    }
+
+    @Test fun `picking a suggestion routes to the action`() {
+        val actions = RecordingActions()
+        panel(actions = actions, suggestions = listOf("hello"))
+        compose.onNodeWithTag("suggestion-hello").performClick()
+        assertEquals(listOf("accept:hello"), actions.calls)
+    }
+
+    /** While dictating the line belongs to the transcript, whatever was being suggested. */
+    @Test fun `suggestions give way to the transcript`() {
+        panel(
+            state = EngineState(
+                status = DictationStatus.RECORDING,
+                stage = DictationStage.LISTENING,
+                partialText = "talking now",
+            ),
+            suggestions = listOf("hello"),
+        )
+        compose.onNodeWithTag("suggestions").assertDoesNotExist()
+        compose.onNodeWithTag("transcript-reveal").assertIsDisplayed()
+    }
+
+    // ------------------------------------------------------------- key preview
+
+    @Test fun `there is no key preview unless it is switched on`() {
+        panel(keysShown = true, keyPreview = false)
+        compose.onNodeWithTag("key-preview").assertDoesNotExist()
     }
 
     // ------------------------------------------------------------ accessibility
