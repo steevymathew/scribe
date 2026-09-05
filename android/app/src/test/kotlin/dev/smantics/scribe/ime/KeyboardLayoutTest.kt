@@ -46,6 +46,64 @@ class KeyboardLayoutTest {
         }
     }
 
+    // ------------------------------------------------------------ uniform grid
+
+    /**
+     * Every row is ten key-widths across, padded if it has to be.
+     *
+     * A row laid out purely by weight makes nine keys wider than ten, so `asdfghjkl` came
+     * out visibly fatter than `qwertyuiop` and a thumb aiming between the rows landed on
+     * the wrong letter. This is the stagger a physical keyboard has.
+     */
+    @Test fun `every row is ten key widths across`() {
+        val rows = listOf(
+            KeyboardLayout.numberRow,
+            KeyboardLayout.letterRows[0],
+            KeyboardLayout.letterRows[1],
+            listOf(Key.Shift) + KeyboardLayout.letterRows[2] + listOf(Key.Backspace),
+            KeyboardLayout.bottomRow,
+        ) + KeyboardLayout.symbolRows + KeyboardLayout.symbolRowsShifted
+
+        rows.forEach { row ->
+            val used = row.sumOf { KeyboardLayout.weightOf(it).toDouble() }.toFloat()
+            val padded = used + KeyboardLayout.indentFor(row) * 2
+            assertEquals(
+                "row ${chars(row)} is $used units, padded to $padded",
+                KeyboardLayout.ROW_UNITS.toDouble(),
+                padded.toDouble(),
+                0.001,
+            )
+        }
+    }
+
+    @Test fun `the nine key rows are indented by half a key at each end`() {
+        assertEquals(0.5f, KeyboardLayout.indentFor(KeyboardLayout.letterRows[1]))
+        assertEquals(0f, KeyboardLayout.indentFor(KeyboardLayout.letterRows[0]))
+    }
+
+    /**
+     * All three pages are built to the same grid, so the keyboard does not change height
+     * when you swipe sideways — which would re-lay out the app behind it every time.
+     */
+    @Test fun `the letters and symbols pages have the same number of rows`() {
+        assertEquals(
+            KeyboardLayout.rowsFor(KeyboardPage.LETTERS, ShiftState.OFF).size,
+            KeyboardLayout.rowsFor(KeyboardPage.SYMBOLS, ShiftState.OFF).size,
+        )
+        assertEquals(
+            KeyboardLayout.rowsFor(KeyboardPage.SYMBOLS, ShiftState.OFF).size,
+            KeyboardLayout.rowsFor(KeyboardPage.SYMBOLS, ShiftState.LOCKED).size,
+        )
+    }
+
+    /** The digits are a shared row, not a row the symbols page spends on its own. */
+    @Test fun `the symbols page does not repeat the digits`() {
+        val digits = chars(KeyboardLayout.numberRow).toSet()
+        val symbols = KeyboardLayout.symbolRows.flatten().let(::chars).toSet() +
+            KeyboardLayout.symbolRowsShifted.flatten().let(::chars).toSet()
+        assertEquals(emptySet<Char>(), digits intersect symbols)
+    }
+
     // -------------------------------------------------------------------- split
 
     /**

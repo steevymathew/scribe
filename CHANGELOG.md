@@ -8,6 +8,42 @@ A dated record of what changed and when. Newest first. Times are local
 The Android port has its own docs (`android/README.md`, `android/docs/`); this section
 records what shipped and when, so the history is legible from the root of the project.
 
+### 2026-09-05 — v0.11.0: the mock-up, uniform keys, and typing that lands
+
+- **Typing felt imprecise because it was.** Characters committed on *release*, so a thumb
+  that landed on a key and drifted a millimetre before lifting typed nothing at all — and
+  the user found out several words later. Characters now commit on **touch-down**, as every
+  keyboard on the platform does. The cost is that a swipe beginning on a key types one
+  character on its way past, so the card raises a counter the moment a drag becomes a swipe
+  and the key that fired takes its character back.
+- **The keys are a uniform grid.** Rows were laid out purely by weight, so the nine-key
+  `asdfghjkl` was stretched to the same width as the ten-key row above it and came out
+  visibly fatter — a thumb aiming between rows landed on the wrong letter. Every row is now
+  padded to a fixed ten key-widths, which is the stagger a physical keyboard has.
+- **The height no longer changes between pages.** The symbols page was one row shorter than
+  the letters, so swiping sideways re-laid out the app behind the keyboard. Both pages now
+  share the number row and are built to the same four-rows-plus-bottom-row grid; the emoji
+  grid is given exactly the height it stands in for.
+- **Pages slide** in from the side they were pulled from rather than cutting, and the bottom
+  row is on every page including emoji, so no page is one you can get stuck on.
+- **Hiding the keys lays the card face down.** It tips forward from its bottom edge to leave
+  the same slab seen side-on, which is also the control that props it back up. The container
+  height is interpolated in step, so the app behind moves with the card.
+- **Shift is a shift arrow**, not the lightning bolt borrowed from the desktop's boost
+  control, and holding a key now *replaces* the character it typed rather than appending —
+  `a` held gives `@`, not `a@`.
+- **"Inserted" is a flash again.** It was written into the status and left there, so a panel
+  opened an hour later still reported the last dictation as if it had just happened, and
+  "Ready" never came back.
+- **Deleting whole words has its own heavier haptic.** Holding backspace switches from
+  characters to words and the two felt identical, so the change of unit passed unnoticed
+  until several words were gone.
+- The keyboard is listed as **"Scribe"** rather than "English".
+- 246 tests, all green. `android/docs/OWNER-VERIFY.md` v0.11.0.
+- Autocorrect, suggestions, clipboard, themes and glide typing are planned rather than
+  built: `Scribe — Keyboard Plan` in the vault, with FUTO as the benchmark and three
+  questions that need the owner before the largest of them can start.
+
 ### 2026-09-04 — v0.10.0: the keyboard rebuilt, and a notification that stays
 
 - **The bubble's notification is permanent and resists dismissal.** It used to be posted

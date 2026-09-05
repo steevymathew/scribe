@@ -25,6 +25,7 @@ import dev.smantics.scribe.model.ModelStore
 import dev.smantics.scribe.settings.ScribeConfig
 import dev.smantics.scribe.settings.SettingsRepository
 import dev.smantics.scribe.ui.theme.DictationStatus
+import dev.smantics.scribe.ui.theme.ScribeMotion
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
@@ -811,6 +812,11 @@ class ScribeEngine private constructor(private val appContext: Context) {
                 lastDecodeSeconds = event.elapsedSec
                 // The reveal publishes states of its own and runs *after* this assignment
                 // — see the note on onEvent.
+                // "Inserted" is a flash, not a state. It used to be written into
+                // statusDetail and left there, so a panel opened an hour later still
+                // reported the result of the last dictation as if it had just happened —
+                // and "Ready", the only thing it could usefully say, never came back.
+                scheduleReadyFlash()
                 current.copy(
                     status = DictationStatus.READY,
                     statusDetail = if (event.text.isEmpty()) "Nothing heard" else "Inserted",
@@ -835,6 +841,28 @@ class ScribeEngine private constructor(private val appContext: Context) {
             if (!deliverToggle(event)) deliverHandsFree(event)
         }
     }
+
+    /**
+     * Put the status back to "Ready" once the "Inserted" flash has had its moment.
+     *
+     * Cancelled and rescheduled if another dictation lands first, and it never overwrites
+     * an error — a failure is not something to tidy away after a second and a half.
+     */
+    private fun scheduleReadyFlash() {
+        readyFlash?.cancel(false)
+        readyFlash = timers.schedule(
+            {
+                val now = _state.value
+                if (now.status == DictationStatus.READY && now.stage == DictationStage.IDLE) {
+                    _state.value = now.copy(statusDetail = "Ready")
+                }
+            },
+            ScribeMotion.DONE_FLASH.toLong(),
+            TimeUnit.MILLISECONDS,
+        )
+    }
+
+    @Volatile private var readyFlash: ScheduledFuture<*>? = null
 
     /**
      * Keep a running measure of how long decoding takes relative to speech.

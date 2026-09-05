@@ -49,6 +49,16 @@ enum class GlyphName {
 
     /** A smiling face, for the key that opens the emoji page. */
     EMOJI,
+
+    /**
+     * Shift: an arrow up over a bar.
+     *
+     * It was a lightning bolt, borrowed from the desktop's "boost" control, and on a
+     * keyboard that is simply the wrong sign — every other keyboard on the platform draws
+     * this shape, and a key that does the most ordinary thing on the board should not need
+     * to be learned.
+     */
+    SHIFT,
 }
 
 @Composable
@@ -105,6 +115,18 @@ fun Glyph(
 
             // Chevrons carry no shaft: they are hints on the edge of a card, and an arrow
             // there reads as a button to press rather than a direction to swipe.
+            GlyphName.SHIFT -> {
+                // Outline, so the filled state (caps lock) can be a colour change rather
+                // than a second shape to recognise.
+                drawLine(color, p(12f, 3.5f), p(4.5f, 11f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(12f, 3.5f), p(19.5f, 11f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(8.5f, 11f), p(8.5f, 16f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(15.5f, 11f), p(15.5f, 16f), stroke.width, StrokeCap.Round)
+                drawLine(color, p(8.5f, 16f), p(15.5f, 16f), stroke.width, StrokeCap.Round)
+                // The bar underneath, which is what distinguishes shift from a plain arrow.
+                drawLine(color, p(8.5f, 20f), p(15.5f, 20f), stroke.width, StrokeCap.Round)
+            }
+
             GlyphName.CHEVRON_LEFT -> {
                 drawLine(color, p(15f, 5f), p(8f, 12f), stroke.width, StrokeCap.Round)
                 drawLine(color, p(15f, 19f), p(8f, 12f), stroke.width, StrokeCap.Round)

@@ -111,17 +111,26 @@ object KeyboardLayout {
     private fun symbols(vararg items: String): List<Key> =
         items.map { Key.Char(it, it) }
 
+    /**
+     * The symbols, in **the same shape as the letters**: three rows under the same number
+     * row, with the third indented.
+     *
+     * The digits used to be the symbols page's first row, which made that page one row
+     * shorter than the letters — so the keyboard changed height when you swiped sideways,
+     * and every app behind it re-laid out. Sharing the number row costs nothing (the
+     * digits were on both pages anyway) and buys a keyboard whose height does not move.
+     */
     val symbolRows: List<List<Key>> = listOf(
-        symbols("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"),
-        symbols("@", "#", "$", "&", "*", "-", "+", "(", ")", "/"),
-        symbols("=", "%", "\"", "'", ":", ";", "!", "?", "~"),
+        symbols("@", "#", "$", "%", "&", "*", "-", "+", "(", ")"),
+        symbols("=", "/", "\\", ":", ";", "\"", "'", "!", "?", "~"),
+        symbols("<", ">", "[", "]", "{", "}", "|", "^", "°"),
     )
 
     /** The second symbols page, reached with shift while on symbols. */
     val symbolRowsShifted: List<List<Key>> = listOf(
-        symbols("`", "|", "•", "√", "π", "÷", "×", "¶", "∆", "£"),
-        symbols("¢", "€", "¥", "^", "°", "{", "}", "[", "]", "\\"),
-        symbols("©", "®", "™", "<", ">", "_", "…", "±", "§"),
+        symbols("`", "•", "√", "π", "÷", "×", "¶", "∆", "£", "¢"),
+        symbols("€", "¥", "©", "®", "™", "§", "±", "≠", "≈", "…"),
+        symbols("_", "—", "“", "”", "‘", "’", "«", "»", "¿"),
     )
 
     /**
@@ -150,6 +159,23 @@ object KeyboardLayout {
         page != KeyboardPage.SYMBOLS -> letterRows
         shift == ShiftState.OFF -> symbolRows
         else -> symbolRowsShifted
+    }
+
+    /**
+     * Every row is this many key-widths across, and that is what makes the letters uniform.
+     *
+     * A row is laid out by weight, so nine keys sharing the full width come out wider than
+     * ten — which is why the middle row used to be visibly fatter than the one above it,
+     * and why a thumb aiming between rows landed on the wrong key. The row is padded to a
+     * fixed ten units instead, exactly as a physical keyboard staggers its rows: `asdfghjkl`
+     * gets half a key of air at each end, and every letter on the board is the same size.
+     */
+    const val ROW_UNITS = 10f
+
+    /** The air at each end of [row], in key-widths, to keep every letter the same size. */
+    fun indentFor(row: List<Key>): Float {
+        val used = row.sumOf { weightOf(it).toDouble() }.toFloat()
+        return ((ROW_UNITS - used) / 2f).coerceAtLeast(0f)
     }
 
     /** The text a character key produces given the current page and shift state. */

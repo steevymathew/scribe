@@ -3,6 +3,7 @@ package dev.smantics.scribe.ime
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -32,6 +34,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -160,7 +164,7 @@ fun ScribePanel(
             // version hid them the moment dictation started, which meant the panel jumped
             // every time the microphone was pressed and the choice never stuck — if they
             // were up they stay up, and the transcript appears above them.
-            if (keysShown) {
+            LayingCard(open = keysShown, onShow = onToggleKeys) {
                 KeysCard(
                     page = page,
                     shift = shift,
@@ -184,12 +188,65 @@ fun ScribePanel(
                         if (shift == ShiftState.ONCE) shift = ShiftState.OFF
                     },
                 )
-            } else {
-                KeysGrabber(onShow = onToggleKeys)
             }
         }
     }
 }
+
+/**
+ * The keys, laid face down and propped back up.
+ *
+ * Swiping the keyboard away tips the card forward until you are looking at its edge, and
+ * swiping up stands it back on its face. The rotation is around the *bottom* edge, which is
+ * what makes it read as a hinge rather than a spin, and the container's height is
+ * interpolated in step so the app behind moves with the card instead of jumping when it
+ * finishes.
+ *
+ * The edge is a real control: it takes the swipe up and a tap, and it is drawn as the same
+ * slab seen side-on, so what is left behind is recognisably the thing that went away rather
+ * than a stray bar.
+ */
+@Composable
+private fun LayingCard(
+    open: Boolean,
+    onShow: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val openness by animateFloatAsState(
+        targetValue = if (open) 1f else 0f,
+        animationSpec = tween(CARD_FLIP_MS),
+        label = "keys-openness",
+    )
+    val full = KeyMetrics.keysHeight + KeyMetrics.cardPadding * 2
+    val height = KeyMetrics.edgeHeight + (full - KeyMetrics.edgeHeight) * openness
+
+    Box(Modifier.fillMaxWidth().height(height), contentAlignment = Alignment.BottomCenter) {
+        // The edge is underneath the whole time and simply stops being covered, so there is
+        // no moment where neither is on screen.
+        KeysGrabber(onShow = onShow)
+        if (openness > 0.01f) {
+            Box(
+                Modifier.graphicsLayer {
+                    // Tipped forward from the bottom edge. Past about eighty degrees the
+                    // face is edge-on and there is nothing left to see, so that is where
+                    // the closed state sits.
+                    rotationX = -CARD_FLIP_DEGREES * (1f - openness)
+                    transformOrigin = TransformOrigin(0.5f, 1f)
+                    // Without a camera distance the projection is extreme enough to look
+                    // like the card is being crushed rather than tilted.
+                    cameraDistance = 14f * density
+                    alpha = openness
+                },
+            ) {
+                content()
+            }
+        }
+    }
+}
+
+/** Long enough to see the card move, short enough not to delay the next keystroke. */
+private const val CARD_FLIP_MS = 260
+private const val CARD_FLIP_DEGREES = 82f
 
 /**
  * The dictation controls: the way into Scribe, the waveform, the mode, and the one big

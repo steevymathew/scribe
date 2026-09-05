@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">Scribe</string>
-    <string name="ime_label">Scribe voice keyboard</string>
-    <string name="ime_subtype_en">English</string>
+    <string name="ime_label">Scribe</string>
+    <string name="ime_subtype_en">Scribe</string>
 
     <string name="listening_channel">Dictation</string>
     <string name="listening_channel_body">Shown while Scribe has the microphone open.</string>

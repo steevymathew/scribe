@@ -113,7 +113,10 @@ class ScribePanelTest {
         panel()
         showKeys()
         compose.onNodeWithTag("key-q").assertIsDisplayed()
-        compose.onNodeWithTag("keys-grabber").assertDoesNotExist()
+        // The edge stays in the layout underneath the card the whole time — it is the same
+        // slab seen side-on, and it simply stops being covered when the card lies down. So
+        // the assertion is that the keys arrived, not that the edge left.
+        compose.onNodeWithTag("keys-card").assertIsDisplayed()
     }
 
     /** The number row is part of the letters page, not a trip through `?123`. */

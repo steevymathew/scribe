@@ -452,3 +452,65 @@ Built from your two screenshots.
 - [ ] The bubble still types into fields, the mic still dictates from the strip, the
       transcript still shows `LISTENING · 0:12` while you talk.
 - [ ] The Scribe mark at the left of the voice strip opens the app.
+
+---
+
+# v0.11.0 — the mock-up, uniform keys, and typing that lands
+
+## 1 · Typing precision — the important one
+
+The keyboard committed characters on **release**, not on touch-down. A thumb that lands on
+a key and drifts a millimetre before lifting typed nothing at all, and you found out
+several words later. Every keyboard on the platform commits on down; this one now does too.
+The keys are also a uniform grid — `asdfghjkl` was being stretched to the full width, so it
+was visibly fatter than the row above and a thumb aiming between rows landed wrong.
+
+- [ ] Type a few paragraphs at your normal speed. **Is it noticeably more accurate?** This
+      is the whole question for this release.
+- [ ] Type fast and sloppily on purpose. Do characters go missing, or do they all land?
+- [ ] `a` and `q` should be exactly the same width, and `asdfghjkl` should sit half a key in
+      from the row above it, like a physical keyboard.
+- [ ] Start a swipe from a letter key. The letter should appear and then **be taken back** as
+      the swipe registers — one character, briefly, not left behind.
+- [ ] Is the swipe threshold right now? It is deliberately larger than last time. It should
+      never fire while typing.
+
+## 2 · The look
+
+- [ ] Compare against your mock-up. Rounder keys, softer moulding, a raised slab behind them
+      with a visible edge.
+- [ ] The shift key is a **shift arrow**, not a lightning bolt.
+- [ ] Enter is the only teal thing on the board while typing.
+- [ ] The shoulder symbols are legible but quiet.
+
+## 3 · Height and page animation
+
+- [ ] Swipe between letters → symbols → emoji. **The keyboard must not change height**, and
+      the app behind it must not re-lay out. This was the point of sharing the number row
+      between the letters and symbols pages.
+- [ ] Pages slide in from the side you pulled them from, rather than cutting.
+- [ ] The bottom row is on every page including emoji, so you are never stuck.
+
+## 4 · Laying the card down
+
+- [ ] Swipe down: the keyboard should **tip forward from its bottom edge** and end as a slim
+      bar — the same slab seen side-on.
+- [ ] Swipe up on that bar (or tap it): it props back up.
+- [ ] Does the app behind move smoothly with it, or jump at the end?
+- [ ] Does the tilt look right, or is it too much / too little? The angle is one constant.
+
+## 5 · Fixes
+
+- [ ] Hold backspace past a second: it starts deleting whole **words**, now with a
+      noticeably heavier buzz for each one. Is it strong enough to feel without looking?
+- [ ] Dictate something. "Inserted" should appear and then go back to "Ready" after about a
+      second and a half — it used to sit there for ever.
+- [ ] Settings → Keyboards: Scribe should now be listed as **"Scribe"**, not "English".
+- [ ] Hold `a` → `@`, and you should get `@` alone, not `a@`.
+
+## 6 · Still missing, deliberately
+
+Autocorrect, suggestions, auto-capitalisation, clipboard, themes and glide typing are
+written up in the vault as `Scribe — Keyboard Plan` with an order to build them in. §4 of
+that note has three questions only you can answer, the sharpest being **whether the voice
+strip should become the suggestion strip while typing** — it is the only row available.
